@@ -21,7 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ÉTAPE MANQUANTE : Configuration de Buildx
+      # ÉTAPE : Configuration de QEMU (nécessaire pour cross-build ARM)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # ÉTAPE : Configuration de Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -50,4 +54,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
           # Suppression temporaire du cache pour isoler l'erreur
