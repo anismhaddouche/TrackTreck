@@ -3,6 +3,9 @@ services:
   # Service de test minimaliste
   test_app:
     image: ghcr.io/anismhaddouche/tracktreck:latest
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
     restart: always
     ports:
       - "80:80"
