@@ -1,12 +1,9 @@
 # TrackTreck Test
 Ce projet sert à valider la CI/CD GitHub Actions vers GHCR.
 
-## 📅 Planning (12 Semaines)
-Voir : [ROADMAP.md](ROADMAP.md)
-
 ---
 
-## 🤝 Guide de Collaboration (Étudiant)
+## Guide de Collaboration 
 
 Pour garantir la qualité du code et la stabilité de la production, nous suivons ce flux de travail :
 
@@ -23,7 +20,7 @@ git checkout -b develop  # Toute modification se fait ICI
 
 ### 3. Livraison (Pull Request)
 Une fois une fonctionnalité terminée :
-1. Poussez votre branche : `git push origin develop`.
+1. Poussez votre branche : `git push origin dev`.
 2. Allez sur GitHub et créez une **Pull Request (PR)** vers `main`.
 3. Le build Docker CI/CD se lancera automatiquement pour vérifier votre code.
 4. **Attendez la validation** de l'administrateur avant le merge.
