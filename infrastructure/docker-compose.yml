@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  # Service de test minimaliste
+  test_app:
+    image: ghcr.io/anismhaddouche/tracktreck:latest
+    restart: always
+    ports:
+      - "80:80"
