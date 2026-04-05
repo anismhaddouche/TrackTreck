@@ -17,6 +17,8 @@ git checkout -b develop  # Toute modification se fait ICI
 - Ne travaillez JAMAIS directement sur la branche `main`.
 - Créez des branches thématiques si besoin : `feat/p1-whatsapp`.
 - Testez votre Docker en local avant de pousser : `docker compose up --build`.
+- Ne mettez JAMAIS de fichiers `.env` ou de clés API dans Git. Utilisez des variables d'environnement locales et demandez les accès secrets à l'administrateur pour la configuration GitHub Secrets.
+
 
 ### 3. Livraison (Pull Request)
 Une fois une fonctionnalité terminée :
@@ -26,6 +28,3 @@ Une fois une fonctionnalité terminée :
 4. **Attendez la validation** de l'administrateur avant le merge.
 
 ---
-
-## 🔒 Gestion des Secrets
-Ne mettez JAMAIS de fichiers `.env` ou de clés API dans Git. Utilisez des variables d'environnement locales et demandez les accès secrets à l'administrateur pour la configuration GitHub Secrets.
