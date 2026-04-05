@@ -13,7 +13,7 @@ git clone https://github.com/anismhaddouche/TrackTreck.git
 git checkout -b develop  # Toute modification se fait ICI
 ```
 
-### 2. Développement (MoSCoW Rules)
+### 2. Régles
 - Ne travaillez JAMAIS directement sur la branche `main`.
 - Créez des branches thématiques si besoin : `feat/p1-whatsapp`.
 - Testez votre Docker en local avant de pousser : `docker compose up --build`.
