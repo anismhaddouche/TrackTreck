@@ -21,14 +21,14 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"text\": \"{{$json[\"body\"][\"data\"][\"message\"][\"conversation\"]}}\",\n  \"type\": \"text\",\n  \"sender\": \"{{$json[\"body\"][\"data\"][\"key\"][\"remoteJid\"]}}\"\n}",
+        "jsonOutput": "={\n  \"jobId\": \"={{ $json.jobId }}\",\n  \"text\": \"={{ $json.text }}\",\n  \"source\": \"text\"\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        656,
-        -112
+        1088,
+        -96
       ],
       "id": "7843d6eb-0540-4942-8469-4b952ebc4851",
       "name": "Edit Fields"
@@ -62,7 +62,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        736,
+        1152,
         128
       ],
       "id": "9aa3eda7-0c24-4b80-84ab-114df85deeb8",
@@ -84,7 +84,7 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        928,
+        1344,
         128
       ],
       "id": "4d3ed26f-b8f0-4fbf-a9bd-a8b332aa22db",
@@ -101,7 +101,7 @@
         "messages": {
           "values": [
             {
-              "content": "You are an expert AI specialized in extracting structured travel offers from WhatsApp messages.\n\nYour goal is to analyze unstructured text (coming from WhatsApp messages, possibly including travel offers, flight tickets, or travel packages) and convert it into a structured JSON format.\n\nYou MUST follow strictly the data structure provided below.\n\n---\n\n### CONTEXT\n\nThe input message may contain:\n- Travel packages (séjour, circuit)\n- Flight tickets (billet d’avion)\n- Mixed offers (flight + hotel + excursions)\n- Informal formatting (emojis, line breaks, WhatsApp style)\n\nYou must:\n- Clean and understand the content\n- Extract only relevant information\n- Infer missing values when possible (but stay realistic)\n- Ignore marketing noise and emojis\n\n---\n\n### IMPORTANT RULES\n\n1. Return ONLY valid JSON (no text before or after).\n2. All fields must exist in the output (use null if missing).\n3. Numbers must be numbers (not strings).\n4. Dates must be converted to ISO format when possible.\n5. Prices must be numeric (remove \"DA\", \"DZD\", spaces, etc).\n6. If multiple hotels or prices exist → structure them correctly.\n7. If it's a flight-only offer:\n   - Still return a valid structure\n   - Use minimal fields (no steps if not relevant)\n8. If information is not present → return null.\n\n---\n\n### OUTPUT STRUCTURE (STRICT)\n\n{\n  \"title\": string,\n  \"agency_id\": 1,\n  \"countries\": [string],\n  \"duration_nights\": number,\n  \"airline\": string,\n  \"description\": string,\n  \"itinerary\": object,\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": boolean,\n  \"global_pricing\": null,\n  \"lead_price\": number,\n  \"services\": {\n    \"included\": [string],\n    \"excluded\": [string]\n  },\n  \"steps\": [\n    {\n      \"city\": string,\n      \"step_order\": number,\n      \"duration_nights\": number,\n      \"hotels\": [\n        {\n          \"hotel_id\": null,\n          \"custom_hotel_name\": string,\n          \"is_default\": boolean,\n          \"pricing\": {\n            \"single\": number,\n            \"double\": number,\n            \"triple\": number\n          }\n        }\n      ]\n    }\n  ],\n  \"departures\": [\n    {\n      \"departure_city\": string,\n      \"stock\": null,\n      \"flight_departure_time\": string,\n      \"flight_arrival_time\": null,\n      \"return_flight_departure_time\": string,\n      \"return_flight_arrival_time\": null\n    }\n  ]\n}\n\n---\n\n### SPECIAL CASES\n\n#### Case 1 — Flight Ticket Only\nIf the message is only about flight tickets:\n- Leave \"steps\" empty []\n- Fill airline, departure city, dates, price\n- Set is_global_pricing = true\n\n#### Case 2 — Travel Package\nIf it includes:\n- hotel\n- nights\n- excursions\nThen:\n- fill steps properly\n- extract hotels\n- set is_global_pricing = false if multiple hotel pricing\n\n---\n\n### EXTRACTION LOGIC\n\n- Detect destination → countries + cities\n- Detect airline → e.g. \"Turkish Airlines\"\n- Detect duration → \"7 nights\" → duration_nights = 7\n- Detect price → \"119 000 DA\" → 119000\n- Detect services → included list\n- Detect hotels → extract names + prices if available\n- Detect dates → convert to ISO format if possible\n- Detect departure city → e.g. Alger\n\n---\n\n### INPUT MESSAGE\n\n{{ $json.text || $json.body?.data?.message?.conversation || $json.body?.data?.message?.extendedTextMessage?.text }}\n\n---\n\n### FINAL INSTRUCTION\n\nAnalyze the message carefully and return a structured JSON strictly following the schema above."
+              "content": "=You are a travel offer extraction engine.\n\nYour goal is to transform unstructured travel content into a STRICT business JSON format.\n\nYou MUST follow EXACTLY the provided schema and logic.\n\nReturn ONLY JSON.\nNo text, no explanation.\n\nText:\n{{$json.text}}\n\n----------------------------------\n\nCRITICAL BEHAVIOR:\n\n- DO NOT copy the raw text\n- DO NOT paste paragraphs\n- You MUST extract, interpret, and map data\n- You MUST clean and normalize values\n\n\n\n----------------------------------\n\nBUSINESS UNDERSTANDING (VERY IMPORTANT):\n\nThis JSON represents a TOUR:\n\n- A tour = a travel package\n- steps = cities visited\n- each step contains hotels\n- services are global (NOT per step)\n- itinerary is descriptive (NOT structured like steps)\n- departures are real dated departures only\n\n----------------------------------\n\nFIELD RULES:\n\n- title:\n  → create a clean marketing title (NOT copied text)\n\n- countries:\n  → MUST be real country names inferred from cities\n\n- duration_nights:\n  → You MUST count nights, not days.\n   at step level must represent the number of nights spent in that city.\n\n\n- airline:\n  → extract ONLY airline name\n\n- description:\n  → short clean summary (max 2 sentences)\n  → NO copy paste\n\n- itinerary:\n  → build day-by-day if possible\n  → independent from steps\n\n- services:\n  → split into included / excluded lists\n\n- lead_price:\n  → MUST be the cheapest possible total price across:\n    → cheapest hotel options in each step\n\nGLOBAL PRICING RULE:\n- \"is_global_pricing\" = true only if there is exactly ONE single general price for the entire offer.\n- If you detect more than one price anywhere in the offer (hotel prices, room prices, options, etc.), then \"is_global_pricing\" = false.\n\nGLOBAL PRICING VALUE RULE:\n- If \"is_global_pricing\" = true, then \"global_pricing\" MUST be equal to the single price found in the offer.\n- If \"is_global_pricing\" = false, then \"global_pricing\" MUST be null.\n----------------------------------\n\nSTEPS (STRICT):\n\n- each step = a city\n- step_order must be sequential (1,2,3...)\n- duration_nights = nights spent in that city not day\n- hotels MUST be inside steps\n\n----------------------------------\n\nHOTELS:\n\n- extract hotel names if present\n- if unknown → custom_hotel_name\n- NEVER invent hotel_id\n- pricing only if explicitly found\n\n----------------------------------\nIMPORTANT BUSINESS RULES:\n\nGLOBAL PRICING:\n- \"is_global_pricing\" = true only if there is exactly one single visible price for the entire offer.\n- If there are two or more prices anywhere in the offer, \"is_global_pricing\" = false.\n- Multiple hotel prices, room prices, traveler prices, or package variants mean \"is_global_pricing\" = false.\n\nIMPORTANT EXTRACTION RULES:\n\nDEPARTURES:\n- If the offer contains a date range like \"Du dd/mm Au dd/mm\", you MUST detect it as one real departure session.\n- The first date is the outbound departure date.\n- The second date is the return departure date.\n- If the year is missing, use the current year (2026).\n- YEAR RULE:\n- If a date is found without a year (e.g. dd/mm), you MUST use the current year(2026).\n- Map date ranges to the departures schema:\n  - \"flight_departure_time\" = outbound date at 00:00:00Z\n  - \"return_flight_departure_time\" = return date at 00:00:00Z\n- Do NOT create custom fields like \"departure_date\" or \"return_date\".\n- Only use the exact schema fields.\n\nHOTELS:\n- You MUST extract the hotel names exactly from the text when they are explicitly mentioned.\n- Hotel names must be stored inside each step under:\n  \"custom_hotel_name\"\n- Do NOT use \"hotel_name\".\n- If the hotel is mentioned in free text and no database id is known:\n  - \"hotel_id\" = null\n  - \"custom_hotel_name\" = extracted hotel name\n- Keep the hotel name clean, but do not invent or replace it with another hotel.\n\nNIGHTS:\n- You MUST count nights, not days.\n- Never convert days into nights.\n- \"duration_nights\" at step level must represent the number of nights spent in that city.\n- \"duration_nights\" at tour level must represent the total number of nights of the stay.\n- If the offer provides both a date range and explicit nights per hotel/step, prioritize the explicit nights written in the text for the steps.\n\n----------------------------------\n\nSTRICT CONSTRAINTS:\n\n- agency_id = 1\n- status = \"draft\"\n- NO hallucination\n- NO invented values\n- NO extra fields\n- MUST match EXACT schema\n\n----------------------------------\n\nSCHEMA TO FOLLOW EXACTLY:\n\n{\n  \"title\": null,\n  \"agency_id\": 1,\n  \"countries\": [],\n  \"duration_nights\": null,\n  \"airline\": null,\n  \"description\": null,\n  \"itinerary\": {},\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": false,\n  \"global_pricing\": null,\n  \"lead_price\": null,\n  \"services\": {\n    \"included\": [],\n    \"excluded\": []\n  },\n  \"steps\": [],\n  \"departures\": []\n}"
             }
           ]
         },
@@ -111,8 +111,8 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
       "position": [
-        1056,
-        -112
+        1488,
+        -96
       ],
       "id": "fa9aee6c-6092-43ae-b967-a431a3c64d99",
       "name": "Message a model",
@@ -133,7 +133,7 @@
           "parameters": [
             {
               "name": "apikey",
-              "value": "429683C4C977415CAAFCCE10F7D57E11"
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
             },
             {
               "name": "Content-Type",
@@ -167,8 +167,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        688,
-        400
+        1152,
+        416
       ],
       "id": "104aa54a-7b00-4b1a-84cb-0f8066292fca",
       "name": "HTTP Request1"
@@ -183,8 +183,8 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        880,
-        400
+        1344,
+        416
       ],
       "id": "a726f705-5a07-4475-8997-e9493281967e",
       "name": "Convert to File1"
@@ -200,7 +200,7 @@
       "type": "n8n-nodes-base.s3",
       "typeVersion": 1,
       "position": [
-        1184,
+        1552,
         240
       ],
       "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
@@ -223,8 +223,8 @@
       "type": "n8n-nodes-base.s3",
       "typeVersion": 1,
       "position": [
-        1120,
-        512
+        1552,
+        528
       ],
       "id": "9e1a50bf-cdce-4593-9844-b16140f502d8",
       "name": "Upload a file2",
@@ -237,40 +237,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// 1. Récupérer le texte du modèle\nconst raw = $json.content?.parts?.[0]?.text;\n\nif (!raw) {\n  throw new Error(\"No model output found\");\n}\n\n// 2. Nettoyer le texte (au cas où)\nconst cleaned = raw\n  .replace(/^```json\\s*/i, \"\")\n  .replace(/^```\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\n// 3. Parser en JSON\nlet parsed;\n\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  throw new Error(\"Invalid JSON from model:\\n\" + cleaned);\n}\n\n// 4. (OPTIONNEL mais conseillé) corrections métier\n\n// corriger pays\nif (parsed.countries && parsed.countries[0] === \"Turkey\") {\n  parsed.countries = [\"Turquie\"];\n}\n\n// corriger airline si null mais détectable\nif (!parsed.airline && cleaned.toLowerCase().includes(\"turkish\")) {\n  parsed.airline = \"Turkish Airlines\";\n}\n\n// corriger itinerary vide\nif (parsed.itinerary) {\n  const allNull = Object.values(parsed.itinerary).every(v => v === null);\n  if (allNull) {\n    parsed.itinerary = {};\n  }\n}\n\n// corriger dates (format simple → ISO approximatif)\nif (parsed.departures) {\n  parsed.departures = parsed.departures.map(dep => {\n    const convertDate = (d) => {\n      if (!d) return null;\n      const [day, month] = d.split(\"/\");\n      if (!day || !month) return d;\n      return `2026-${month.padStart(2, \"0\")}-${day.padStart(2, \"0\")}T00:00:00Z`;\n    };\n\n    return {\n      ...dep,\n      flight_departure_time: convertDate(dep.flight_departure_time),\n      return_flight_departure_time: convertDate(dep.return_flight_departure_time)\n    };\n  });\n}\n\n// 5. retourner un vrai JSON exploitable\nreturn [\n  {\n    json: parsed\n  }\n];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1392,
-        -112
-      ],
-      "id": "556e04f7-592e-4141-a855-af38da222024",
-      "name": "Code in JavaScript"
-    },
-    {
-      "parameters": {
-        "content": "## note \nLe code en java est fait \npour structuré l'output json\n\n",
-        "height": 144,
-        "width": 342
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        1456,
-        -208
-      ],
-      "typeVersion": 1,
-      "id": "c87fd133-1523-4473-aed8-7b35c6281acc",
-      "name": "Sticky Note"
-    },
-    {
-      "parameters": {
         "amount": 15
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1568,
+        1984,
         128
       ],
       "id": "10a85b81-6f1c-4d34-8efc-eedac784e4fb",
@@ -284,8 +256,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1568,
-        400
+        1984,
+        416
       ],
       "id": "eef97951-ec79-48d9-b3e2-85f02a8d8907",
       "name": "Wait1",
@@ -293,33 +265,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [\n  {\n    json: JSON.parse($json.pages[0].md)\n  }\n];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2016,
-        400
-      ],
-      "id": "26f2cc67-d54f-4197-8192-2cf7d6267aa4",
-      "name": "Code in JavaScript1"
-    },
-    {
-      "parameters": {
-        "jsCode": "return [\n  {\n    json: JSON.parse($json.pages[0].md)\n  }\n];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1968,
-        128
-      ],
-      "id": "84ab9f6a-5ce7-4c2c-a020-71f8505d3e2f",
-      "name": "Code in JavaScript2"
-    },
-    {
-      "parameters": {
-        "jsCode": "const root = $input.first().json;\n\nconst envelope = root.body || {};\nconst data = envelope.data || {};\nconst message = data.message || {};\nconst key = data.key || {};\n\n// ---------- TEXT ----------\nconst conversation = message.conversation || null;\nconst extendedText = message.extendedTextMessage?.text || null;\nconst imageCaption = message.imageMessage?.caption || null;\nconst documentCaption = message.documentMessage?.caption || null;\n\nconst textContent =\n  conversation ||\n  extendedText ||\n  imageCaption ||\n  documentCaption ||\n  null;\n\nconst hasText = !!textContent;\n\n// ---------- IMAGE ----------\nconst imageMessage =\n  message.imageMessage ||\n  message?.viewOnceMessage?.message?.imageMessage ||\n  message?.ephemeralMessage?.message?.imageMessage ||\n  null;\n\nconst hasImage = !!imageMessage;\nconst resolvedImageCaption = imageMessage?.caption || '';\n\n// ---------- PDF ----------\nconst documentMessage =\n  message.documentMessage ||\n  message?.viewOnceMessage?.message?.documentMessage ||\n  message?.ephemeralMessage?.message?.documentMessage ||\n  null;\n\nconst mimeType = documentMessage?.mimetype?.toLowerCase() || '';\nconst fileName = documentMessage?.fileName?.toLowerCase() || '';\n\nconst hasPdf = !!(\n  documentMessage &&\n  (mimeType.includes('pdf') || fileName.endsWith('.pdf'))\n);\n\n// ---------- JOB ID ----------\nconst jobId =\n  'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);\n\n// ---------- SENDER ----------\nconst senderJid = key.remoteJid || envelope.sender || 'unknown';\n\nreturn [{\n  json: {\n    jobId,\n    senderJid,\n\n    messageId: key.id || null,\n    remoteJid: key.remoteJid || null,\n    fromMe: key.fromMe || false,\n    instanceName: envelope.instance || null,\n\n    originalPayload: root,\n    originalBody: envelope,\n\n    hasText,\n    hasImage,\n    hasPdf,\n\n    text: textContent,\n    imageCaption: resolvedImageCaption,\n\n    image: hasImage ? imageMessage : null,\n    pdf: hasPdf ? documentMessage : null\n  }\n}];"
+        "jsCode": "const root = $input.first().json;\n\nconst envelope = root.body || {};\nconst data = envelope.data || {};\nconst message = data.message || {};\nconst key = data.key || {};\n\n// ---------- TEXT ----------\nconst conversation = message.conversation || null;\nconst extendedText = message.extendedTextMessage?.text || null;\nconst imageCaption = message.imageMessage?.caption || null;\nconst documentCaption = message.documentMessage?.caption || null;\n\nconst textContent =\n  conversation ||\n  extendedText ||\n  imageCaption ||\n  documentCaption ||\n  null;\n\nconst hasText = !!textContent;\n\n// ---------- IMAGE ----------\nconst imageMessage =\n  message.imageMessage ||\n  message?.viewOnceMessage?.message?.imageMessage ||\n  message?.ephemeralMessage?.message?.imageMessage ||\n  null;\n\nconst hasImage = !!imageMessage;\nconst resolvedImageCaption = imageMessage?.caption || '';\n\n// ---------- PDF ----------\nconst documentMessage =\n  message.documentMessage ||\n  message?.viewOnceMessage?.message?.documentMessage ||\n  message?.ephemeralMessage?.message?.documentMessage ||\n  null;\n\nconst mimeType = documentMessage?.mimetype?.toLowerCase() || '';\nconst fileName = documentMessage?.fileName?.toLowerCase() || '';\n\nconst hasPdf = !!(\n  documentMessage &&\n  (mimeType.includes('pdf') || fileName.endsWith('.pdf'))\n);\n\n// ---------- JOB ID ----------\nconst jobId =\n  'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);\n\n// ---------- SENDER ----------\nconst senderJid = key.remoteJid || envelope.sender || 'unknown';\n\nreturn [{\n  json: {\n    jobId,\n    senderJid,\n    messageId: key.id || null,\n    remoteJid: key.remoteJid || null,\n    fromMe: key.fromMe || false,\n    instanceName: envelope.instance || null,\n\n    originalPayload: root,\n    originalBody: envelope,\n\n    hasText,\n    hasImage,\n    hasPdf,\n\n    text: textContent,\n    imageCaption: resolvedImageCaption,\n\n    image: hasImage ? imageMessage : null,\n    pdf: hasPdf ? documentMessage : null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -358,8 +304,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        304,
-        -96
+        736,
+        -80
       ],
       "id": "f474fed7-1cd1-48a8-ae3a-f28310d84c0f",
       "name": "if texte"
@@ -392,8 +338,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        288,
-        416
+        736,
+        432
       ],
       "id": "a1d6052c-9dfe-412e-8998-5073bf66aa62",
       "name": "if pdf"
@@ -419,7 +365,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1776,
+        2192,
         128
       ],
       "id": "1b32de8b-fa5b-4d9f-ba92-3860d4d90035",
@@ -446,8 +392,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1792,
-        400
+        2192,
+        416
       ],
       "id": "d205667a-58ca-48ed-b28d-bed8da2b9c6d",
       "name": "Get Parse Result 2"
@@ -476,7 +422,7 @@
             },
             {
               "name": "parsing_instruction",
-              "value": "Tu es un parser d'offres de voyage. Analyse ce document et retourne UNIQUEMENT un objet JSON valide avec cette structure exacte (sans markdown, sans code block): {\"title\": string, \"countries\": string, \"duration_nights\": number, \"airline\": string, \"description\": string, \"is_global_pricing\": boolean, \"global_pricing\": null ou {\"dbl\":number,\"tpl\":number,\"sgl\":number,\"inf\":number,\"chd_2_6\":number,\"chd_5_11\":number}, \"steps\": [{\"city\": string, \"step_order\": number, \"duration_nights\": number, \"hotels\": [{\"hotel_name\": string, \"pricing\": {\"dbl\":number,\"tpl\":number,\"sgl\":number,\"inf\":number,\"chd_2_6\":number,\"chd_5_11\":number}, \"is_default\": boolean}]}], \"services_included\": [string], \"services_excluded\": [string], \"departures\": [{\"departure_city\": string, \"flight_departure_datetime\": string ou null, \"flight_arrival_datetime\": string ou null, \"return_departure_datetime\": string ou null, \"return_arrival_datetime\": string ou null, \"capacity\": number}], \"itinerary\": [{\"day_number\": number, \"title\": string, \"content_items\": [string]}]}"
+              "value": "You are an expert travel offer extraction assistant.  Return ONLY a valid JSON object. No markdown, no explanation, no code fences.  You MUST strictly follow this exact schema and meaning:  {   \"title\": null,   \"agency_id\": 1,   \"countries\": [],   \"duration_nights\": null,   \"airline\": null,   \"description\": null,   \"itinerary\": {},   \"status\": \"draft\",   \"photo_urls\": [],   \"is_global_pricing\": false,   \"global_pricing\": null,   \"lead_price\": null,   \"services\": {     \"included\": [],     \"excluded\": []   },   \"steps\": [     {       \"city\": null,       \"step_order\": 1,       \"duration_nights\": null,       \"hotels\": [         {           \"hotel_id\": null,           \"custom_hotel_name\": null,           \"is_default\": true,           \"pricing\": {             \"single\": null,             \"double\": null,             \"triple\": null           }         }       ]     }   ],   \"departures\": [     {       \"departure_city\": null,       \"stock\": null,       \"flight_departure_time\": null,       \"flight_arrival_time\": null,       \"return_flight_departure_time\": null,       \"return_flight_arrival_time\": null     }   ] }  STRICT RULES: - agency_id must always be 1 - status must be \"draft\" unless explicitly known otherwise - countries must contain real country names, never emojis - title should be inferred when possible - lead_price must be the minimum main price - steps are city stages - hotels belong inside steps - services are offer-level only - itinerary is independent from steps - departures must only contain reliable departure sessions - do not invent unsupported fields - return only JSON"
             },
             {
               "name": "result_type",
@@ -489,7 +435,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1360,
+        1776,
         128
       ],
       "id": "2ac76478-ebb9-4c9e-a697-a34bb5ff2b03",
@@ -520,7 +466,7 @@
             },
             {
               "name": "parsing_instruction",
-              "value": "Tu analyses un document contenant une offre de voyage.  Ta tâche est d'extraire les informations visibles dans le document et de retourner UNIQUEMENT un objet JSON valide, sans texte avant ou après, sans markdown, sans commentaire, sans bloc de code.  Respecte STRICTEMENT cette structure :  {   \"title\": string,   \"countries\": string,   \"duration_nights\": number,   \"airline\": string,   \"description\": string,   \"is_global_pricing\": boolean,   \"global_pricing\": null | {     \"dbl\": number,     \"tpl\": number,     \"sgl\": number,     \"inf\": number,     \"chd_2_6\": number,     \"chd_5_11\": number   },   \"steps\": [     {       \"city\": string,       \"step_order\": number,       \"duration_nights\": number,       \"hotels\": [         {           \"hotel_name\": string,           \"pricing\": {             \"dbl\": number,             \"tpl\": number,             \"sgl\": number,             \"inf\": number,             \"chd_2_6\": number,             \"chd_5_11\": number           },           \"is_default\": boolean         }       ]     }   ],   \"services_included\": [string],   \"services_excluded\": [string],   \"departures\": [     {       \"departure_city\": string,       \"flight_departure_datetime\": string | null,       \"flight_arrival_datetime\": string | null,       \"return_departure_datetime\": string | null,       \"return_arrival_datetime\": string | null,       \"capacity\": number     }   ],   \"itinerary\": [     {       \"day_number\": number,       \"title\": string,       \"content_items\": [string]     }   ] }  Règles obligatoires :  1. N'invente jamais une information absente du document. 2. Si une valeur texte n'est pas trouvée, retourne \"\". 3. Si une valeur numérique n'est pas trouvée, retourne 0. 4. Si une date ou heure n'est pas trouvée, retourne null. 5. Si un tableau n'est pas trouvé, retourne []. 6. Si les prix sont portés par des hôtels différents, alors \"is_global_pricing\" = false et \"global_pricing\" = null. 7. Si un seul tableau tarifaire global est visible pour toute l'offre, alors \"is_global_pricing\" = true et remplis \"global_pricing\". 8. Si plusieurs hôtels sont listés, mets \"is_default\": true uniquement pour l'hôtel standard ou principal si cela est clairement identifiable, sinon false. 9. Pour \"countries\", retourne le pays principal de l’offre sous forme de texte simple. 10. Pour \"description\", fais un résumé très court et factuel de l’offre, uniquement à partir des informations visibles. 11. Pour \"departures\", crée une entrée par date de départ visible. 12. Pour \"itinerary\", remplis uniquement si le programme jour par jour est réellement présent. Sinon retourne []. 13. Retourne un JSON brut strictement valide.  N'ajoute rien d'autre que le JSON final. Si certaines sections (steps, departures, itinerary, services) ne sont pas clairement présentes dans le document, retourne des tableaux vides. Tout élément marketing ou avantage (plage, piscine, toboggans, hôtel 4 étoiles, etc.) doit être ajouté dans \"services_included\". duration_nights = nombre de nuitées"
+              "value": "You are an expert travel offer extraction assistant.  Return ONLY a valid JSON object. No markdown, no explanation, no code fences.  You MUST strictly follow this exact schema and meaning:  {   \"title\": null,   \"agency_id\": 1,   \"countries\": [],   \"duration_nights\": null,   \"airline\": null,   \"description\": null,   \"itinerary\": {},   \"status\": \"draft\",   \"photo_urls\": [],   \"is_global_pricing\": false,   \"global_pricing\": null,   \"lead_price\": null,   \"services\": {     \"included\": [],     \"excluded\": []   },   \"steps\": [     {       \"city\": null,       \"step_order\": 1,       \"duration_nights\": null,       \"hotels\": [         {           \"hotel_id\": null,           \"custom_hotel_name\": null,           \"is_default\": true,           \"pricing\": {             \"single\": null,             \"double\": null,             \"triple\": null           }         }       ]     }   ],   \"departures\": [     {       \"departure_city\": null,       \"stock\": null,       \"flight_departure_time\": null,       \"flight_arrival_time\": null,       \"return_flight_departure_time\": null,       \"return_flight_arrival_time\": null     }   ] }  STRICT RULES: - agency_id must always be 1 - status must be \"draft\" unless explicitly known otherwise - countries must contain real country names, never emojis - title should be inferred when possible - lead_price must be the minimum main price - steps are city stages - hotels belong inside steps - services are offer-level only - itinerary is independent from steps - departures must only contain reliable departure sessions - do not invent unsupported fields - return only JSON"
             },
             {
               "name": "result_type",
@@ -533,8 +479,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1328,
-        400
+        1776,
+        416
       ],
       "id": "98688a37-9caf-4d81-a658-dac2fc5256bc",
       "name": "LLama Extraction1",
@@ -542,12 +488,12 @@
     },
     {
       "parameters": {
-        "jsCode": "const allItems = $input.all();\nconst partialResults = [];\n\nfor (const item of allItems) {\n  const d = item.json;\n\n  // Case 1: wrapped format\n  if (d && d._hasData === true && d.payload) {\n    partialResults.push(d.payload);\n    continue;\n  }\n\n  // Case 2: already a raw tour object\n  if (\n    d &&\n    (\n      Object.prototype.hasOwnProperty.call(d, 'agency_id') ||\n      Object.prototype.hasOwnProperty.call(d, 'services') ||\n      Object.prototype.hasOwnProperty.call(d, 'steps') ||\n      Object.prototype.hasOwnProperty.call(d, 'departures')\n    )\n  ) {\n    partialResults.push(d);\n  }\n}\n\nconst final = {\n  title: null,\n  agency_id: 1,\n  countries: [],\n  duration_nights: null,\n  airline: null,\n  description: null,\n  itinerary: {},\n  status: 'draft',\n  photo_urls: [],\n  is_global_pricing: false,\n  global_pricing: null,\n  lead_price: null,\n  services: {\n    included: [],\n    excluded: []\n  },\n  steps: [],\n  departures: []\n};\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => v !== null && v !== undefined && v !== ''))];\n}\n\nfunction mergeHotels(existingHotels = [], incomingHotels = []) {\n  const merged = [...existingHotels];\n\n  for (const hotel of incomingHotels || []) {\n    const idx = merged.findIndex(h =>\n      (h.hotel_id ?? null) === (hotel.hotel_id ?? null) &&\n      (h.custom_hotel_name ?? null) === (hotel.custom_hotel_name ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(hotel);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        hotel_id: existing.hotel_id ?? hotel.hotel_id ?? null,\n        custom_hotel_name: existing.custom_hotel_name ?? hotel.custom_hotel_name ?? null,\n        is_default: existing.is_default ?? hotel.is_default ?? false,\n        pricing: {\n          ...(existing.pricing || {}),\n          ...(hotel.pricing || {})\n        }\n      };\n    }\n  }\n\n  return merged;\n}\n\nfunction mergeSteps(existingSteps = [], incomingSteps = []) {\n  const merged = [...existingSteps];\n\n  for (const step of incomingSteps || []) {\n    const idx = merged.findIndex(s =>\n      (s.step_order ?? null) === (step.step_order ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push({\n        city: step.city ?? null,\n        step_order: step.step_order ?? null,\n        duration_nights: step.duration_nights ?? null,\n        hotels: Array.isArray(step.hotels) ? step.hotels : []\n      });\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        city: existing.city ?? step.city ?? null,\n        step_order: existing.step_order ?? step.step_order ?? null,\n        duration_nights: existing.duration_nights ?? step.duration_nights ?? null,\n        hotels: mergeHotels(existing.hotels || [], step.hotels || [])\n      };\n    }\n  }\n\n  return merged.sort((a, b) => (a.step_order ?? 9999) - (b.step_order ?? 9999));\n}\n\nfunction mergeDepartures(existingDeps = [], incomingDeps = []) {\n  const merged = [...existingDeps];\n\n  for (const dep of incomingDeps || []) {\n    const idx = merged.findIndex(d =>\n      (d.departure_city ?? null) === (dep.departure_city ?? null) &&\n      (d.flight_departure_time ?? null) === (dep.flight_departure_time ?? null) &&\n      (d.return_flight_departure_time ?? null) === (dep.return_flight_departure_time ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(dep);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        departure_city: existing.departure_city ?? dep.departure_city ?? null,\n        stock: existing.stock ?? dep.stock ?? null,\n        flight_departure_time: existing.flight_departure_time ?? dep.flight_departure_time ?? null,\n        flight_arrival_time: existing.flight_arrival_time ?? dep.flight_arrival_time ?? null,\n        return_flight_departure_time: existing.return_flight_departure_time ?? dep.return_flight_departure_time ?? null,\n        return_flight_arrival_time: existing.return_flight_arrival_time ?? dep.return_flight_arrival_time ?? null\n      };\n    }\n  }\n\n  return merged;\n}\n\nfor (const p of partialResults) {\n  final.title = final.title ?? p.title ?? null;\n  final.agency_id = final.agency_id ?? p.agency_id ?? 1;\n  final.duration_nights = final.duration_nights ?? p.duration_nights ?? null;\n  final.airline = final.airline ?? p.airline ?? null;\n  final.description = final.description ?? p.description ?? null;\n  final.lead_price = final.lead_price ?? p.lead_price ?? null;\n\n  if (p.status && final.status === 'draft') {\n    final.status = p.status;\n  }\n\n  if (p.is_global_pricing === true) {\n    final.is_global_pricing = true;\n    final.global_pricing = final.global_pricing ?? p.global_pricing ?? null;\n  }\n\n  final.countries = uniqueStrings([...(final.countries || []), ...(p.countries || [])]);\n  final.photo_urls = uniqueStrings([...(final.photo_urls || []), ...(p.photo_urls || [])]);\n\n  final.services.included = uniqueStrings([\n    ...(final.services.included || []),\n    ...((p.services && p.services.included) || [])\n  ]);\n\n  final.services.excluded = uniqueStrings([\n    ...(final.services.excluded || []),\n    ...((p.services && p.services.excluded) || [])\n  ]);\n\n  final.itinerary = {\n    ...(final.itinerary || {}),\n    ...(p.itinerary || {})\n  };\n\n  final.steps = mergeSteps(final.steps, p.steps || []);\n  final.departures = mergeDepartures(final.departures, p.departures || []);\n}\n\nreturn [{ json: final }];"
+        "jsCode": "const allItems = $input.all();\nconst partialResults = [];\n\nfor (const item of allItems) {\n  const d = item.json;\n\n  if (d && d._hasData === true && d.payload) {\n    partialResults.push({\n      source: d.source || null,\n      payload: d.payload\n    });\n    continue;\n  }\n\n  if (\n    d &&\n    (\n      Object.prototype.hasOwnProperty.call(d, 'agency_id') ||\n      Object.prototype.hasOwnProperty.call(d, 'services') ||\n      Object.prototype.hasOwnProperty.call(d, 'steps') ||\n      Object.prototype.hasOwnProperty.call(d, 'departures')\n    )\n  ) {\n    partialResults.push({\n      source: null,\n      payload: d\n    });\n  }\n}\n\nconst final = {\n  title: null,\n  agency_id: 1,\n  countries: [],\n  duration_nights: null,\n  airline: null,\n  description: null,\n  itinerary: {},\n  status: 'draft',\n  photo_urls: [],\n  is_global_pricing: false,\n  global_pricing: null,\n  lead_price: null,\n  services: {\n    included: [],\n    excluded: []\n  },\n  steps: [],\n  departures: []\n};\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => v !== null && v !== undefined && v !== ''))];\n}\n\nfunction mergeHotels(existingHotels = [], incomingHotels = []) {\n  const merged = [...existingHotels];\n\n  for (const hotel of incomingHotels || []) {\n    const idx = merged.findIndex(h =>\n      (h.hotel_id ?? null) === (hotel.hotel_id ?? null) &&\n      (h.custom_hotel_name ?? null) === (hotel.custom_hotel_name ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(hotel);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        hotel_id: existing.hotel_id ?? hotel.hotel_id ?? null,\n        custom_hotel_name: existing.custom_hotel_name ?? hotel.custom_hotel_name ?? null,\n        is_default: existing.is_default ?? hotel.is_default ?? false,\n        pricing: {\n          ...(existing.pricing || {}),\n          ...(hotel.pricing || {})\n        }\n      };\n    }\n  }\n\n  return merged;\n}\n\nfunction mergeSteps(existingSteps = [], incomingSteps = []) {\n  const merged = [...existingSteps];\n\n  for (const step of incomingSteps || []) {\n    const idx = merged.findIndex(s =>\n      (s.step_order ?? null) === (step.step_order ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push({\n        city: step.city ?? null,\n        step_order: step.step_order ?? null,\n        duration_nights: step.duration_nights ?? null,\n        hotels: Array.isArray(step.hotels) ? step.hotels : []\n      });\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        city: existing.city ?? step.city ?? null,\n        step_order: existing.step_order ?? step.step_order ?? null,\n        duration_nights: existing.duration_nights ?? step.duration_nights ?? null,\n        hotels: mergeHotels(existing.hotels || [], step.hotels || [])\n      };\n    }\n  }\n\n  return merged.sort((a, b) => (a.step_order ?? 9999) - (b.step_order ?? 9999));\n}\n\nfunction mergeDepartures(existingDeps = [], incomingDeps = []) {\n  const merged = [...existingDeps];\n\n  for (const dep of incomingDeps || []) {\n    const idx = merged.findIndex(d =>\n      (d.departure_city ?? null) === (dep.departure_city ?? null) &&\n      (d.flight_departure_time ?? null) === (dep.flight_departure_time ?? null) &&\n      (d.return_flight_departure_time ?? null) === (dep.return_flight_departure_time ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(dep);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        departure_city: existing.departure_city ?? dep.departure_city ?? null,\n        stock: existing.stock ?? dep.stock ?? null,\n        flight_departure_time: existing.flight_departure_time ?? dep.flight_departure_time ?? null,\n        flight_arrival_time: existing.flight_arrival_time ?? dep.flight_arrival_time ?? null,\n        return_flight_departure_time: existing.return_flight_departure_time ?? dep.return_flight_departure_time ?? null,\n        return_flight_arrival_time: existing.return_flight_arrival_time ?? dep.return_flight_arrival_time ?? null\n      };\n    }\n  }\n\n  return merged;\n}\n\n// Priorité légère au texte\nconst sourcePriority = { text: 1, image: 2, pdf: 3, null: 99 };\npartialResults.sort((a, b) => {\n  const pa = sourcePriority[a.source ?? 'null'] ?? 99;\n  const pb = sourcePriority[b.source ?? 'null'] ?? 99;\n  return pa - pb;\n});\n\nfor (const result of partialResults) {\n  const p = result.payload || {};\n\n  final.title = final.title ?? p.title ?? null;\n  final.agency_id = final.agency_id ?? p.agency_id ?? 1;\n  final.duration_nights = final.duration_nights ?? p.duration_nights ?? null;\n  final.airline = final.airline ?? p.airline ?? null;\n  final.description = final.description ?? p.description ?? null;\n  final.lead_price = final.lead_price ?? p.lead_price ?? null;\n\n  if (p.status && final.status === 'draft') {\n    final.status = p.status;\n  }\n\n  if (p.is_global_pricing === true) {\n    final.is_global_pricing = true;\n    final.global_pricing = final.global_pricing ?? p.global_pricing ?? null;\n  }\n\n  final.countries = uniqueStrings([...(final.countries || []), ...(p.countries || [])]);\n  final.photo_urls = uniqueStrings([...(final.photo_urls || []), ...(p.photo_urls || [])]);\n\n  final.services.included = uniqueStrings([\n    ...(final.services.included || []),\n    ...((p.services && p.services.included) || [])\n  ]);\n\n  final.services.excluded = uniqueStrings([\n    ...(final.services.excluded || []),\n    ...((p.services && p.services.excluded) || [])\n  ]);\n\n  // texte légèrement prioritaire aussi sur itinerary\n  final.itinerary = {\n    ...(p.itinerary || {}),\n    ...(final.itinerary || {})\n  };\n\n  final.steps = mergeSteps(final.steps, p.steps || []);\n  final.departures = mergeDepartures(final.departures, p.departures || []);\n}\n\nreturn [{ json: final }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2544,
+        2960,
         144
       ],
       "id": "2b51d0a5-1412-4c12-a021-a2c4b761ac25",
@@ -562,7 +508,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        2736,
+        3152,
         144
       ],
       "id": "c295a024-5fd5-41df-9f78-922e89c8951b",
@@ -573,8 +519,8 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2128,
-        -96
+        2544,
+        -80
       ],
       "id": "26df65f8-c10a-4e4a-be8f-9f265025cdcd",
       "name": "Merge"
@@ -584,7 +530,7 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2336,
+        2752,
         144
       ],
       "id": "3663e08b-4e14-491e-aed7-ec33417ce8e6",
@@ -618,12 +564,90 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        336,
+        752,
         144
       ],
       "id": "3b5b79ef-4a0a-4744-8847-0f76744692f0",
       "name": "if image",
-      "alwaysOutputData": true
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        -80
+      ],
+      "id": "d12f46a7-afca-4af3-ad32-b51795c61f7f",
+      "name": "Fork text"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        144
+      ],
+      "id": "0f61c4b3-e71c-4696-bcdd-f52c68dbbea0",
+      "name": "Fork image"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        432
+      ],
+      "id": "192afbab-d59a-444e-8f94-dd5fc21a3cb9",
+      "name": "Fork pdf"
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $input.first().json;\nconst detectData = $('Detect Content & Generate JobId').first().json;\n\nconst jobId = detectData.jobId || 'unknown';\n\nfunction createEmptyTour() {\n  return {\n    title: null,\n    agency_id: 1,\n    countries: [],\n    duration_nights: null,\n    airline: null,\n    description: null,\n    itinerary: {},\n    status: 'draft',\n    photo_urls: [],\n    is_global_pricing: false,\n    global_pricing: null,\n    lead_price: null,\n    services: {\n      included: [],\n      excluded: []\n    },\n    steps: [],\n    departures: []\n  };\n}\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => typeof v === 'string' && v.trim() !== ''))];\n}\n\nfunction normalizeString(v) {\n  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;\n}\n\nfunction normalizeNumber(v) {\n  return typeof v === 'number' && Number.isFinite(v) ? v : null;\n}\n\nfunction titleCaseCity(v) {\n  const s = normalizeString(v);\n  if (!s) return null;\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nlet rawText =\n  llmResponse?.content?.parts?.[0]?.text ||\n  llmResponse?.text ||\n  llmResponse?.output ||\n  llmResponse?.message ||\n  '';\n\nif (!rawText || typeof rawText !== 'string') {\n  return [{\n    json: {\n      extractionType: 'text',\n      _hasData: false,\n      source: 'text',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nrawText = rawText.trim();\nrawText = rawText.replace(/^```json\\s*/i, '');\nrawText = rawText.replace(/^```\\s*/i, '');\nrawText = rawText.replace(/\\s*```$/i, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(rawText);\n} catch (error) {\n  return [{\n    json: {\n      extractionType: 'text',\n      _hasData: false,\n      source: 'text',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nconst payload = createEmptyTour();\n\npayload.title = normalizeString(parsed.title);\npayload.agency_id = 1;\npayload.countries = uniqueStrings(Array.isArray(parsed.countries) ? parsed.countries : []);\npayload.duration_nights = normalizeNumber(parsed.duration_nights);\npayload.airline = normalizeString(parsed.airline);\npayload.description = normalizeString(parsed.description);\npayload.status = ['draft', 'pending_approval', 'published', 'rejected'].includes(parsed.status)\n  ? parsed.status\n  : 'draft';\npayload.photo_urls = Array.isArray(parsed.photo_urls)\n  ? parsed.photo_urls.filter(v => typeof v === 'string' && v.trim() !== '')\n  : [];\npayload.is_global_pricing = parsed.is_global_pricing === true;\npayload.global_pricing = parsed.global_pricing ?? null;\npayload.lead_price = normalizeNumber(parsed.lead_price);\n\npayload.services = {\n  included: uniqueStrings(parsed?.services?.included),\n  excluded: uniqueStrings(parsed?.services?.excluded)\n};\n\nif (parsed.itinerary && typeof parsed.itinerary === 'object' && !Array.isArray(parsed.itinerary)) {\n  const keys = Object.keys(parsed.itinerary);\n  const alreadyDayFormat = keys.every(k => /^day_\\d+$/i.test(k));\n\n  if (alreadyDayFormat) {\n    payload.itinerary = parsed.itinerary;\n  } else {\n    let i = 1;\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[`day_${i}`] = value.trim();\n        i++;\n      } else if (value && typeof value === 'object') {\n        const parts = [];\n        if (key) parts.push(titleCaseCity(key));\n        if (value.hotel) parts.push(`hôtel: ${value.hotel}`);\n        if (value.nights) parts.push(`${value.nights} nuits`);\n        if (parts.length > 0) {\n          normalizedItinerary[`day_${i}`] = parts.join(', ');\n          i++;\n        }\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  }\n}\n\nif (Array.isArray(parsed.steps) && parsed.steps.length > 0) {\n  payload.steps = parsed.steps.map((step, index) => ({\n    city: titleCaseCity(step.city),\n    step_order: typeof step.step_order === 'number' ? step.step_order : index + 1,\n    duration_nights: normalizeNumber(step.duration_nights),\n    hotels: Array.isArray(step.hotels)\n      ? step.hotels.map(h => ({\n          hotel_id: h.hotel_id ?? null,\n          custom_hotel_name: normalizeString(h.custom_hotel_name),\n          is_default: h.is_default === true,\n          pricing: {\n            single: normalizeNumber(h?.pricing?.single),\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'text',\n    _hasData: true,\n    source: 'text',\n    jobId,\n    payload\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -96
+      ],
+      "id": "556e04f7-592e-4141-a855-af38da222024",
+      "name": "Format Text Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $input.first().json;\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'pdf',\n    _hasData: true,\n    source: 'pdf',\n    jobId,\n    payload\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        416
+      ],
+      "id": "26f2cc67-d54f-4197-8192-2cf7d6267aa4",
+      "name": "Format PDF Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $input.first().json;\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'image',\n    _hasData: true,\n    source: 'image',\n    jobId,\n    payload\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        128
+      ],
+      "id": "84ab9f6a-5ce7-4c2c-a020-71f8505d3e2f",
+      "name": "Format Image Result"
     }
   ],
   "pinData": {},
@@ -681,7 +705,7 @@
       "main": [
         [
           {
-            "node": "Code in JavaScript",
+            "node": "Format Text Result",
             "type": "main",
             "index": 0
           }
@@ -751,17 +775,17 @@
       "main": [
         [
           {
-            "node": "if texte",
+            "node": "Fork text",
             "type": "main",
             "index": 0
           },
           {
-            "node": "if pdf",
+            "node": "Fork image",
             "type": "main",
             "index": 0
           },
           {
-            "node": "if image",
+            "node": "Fork pdf",
             "type": "main",
             "index": 0
           }
@@ -792,44 +816,11 @@
         []
       ]
     },
-    "Code in JavaScript2": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code in JavaScript": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code in JavaScript1": {
-      "main": [
-        [
-          {
-            "node": "Merge 2",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
     "Get Parse Result": {
       "main": [
         [
           {
-            "node": "Code in JavaScript2",
+            "node": "Format Image Result",
             "type": "main",
             "index": 0
           }
@@ -840,7 +831,7 @@
       "main": [
         [
           {
-            "node": "Code in JavaScript1",
+            "node": "Format PDF Result",
             "type": "main",
             "index": 0
           }
@@ -913,6 +904,72 @@
         ],
         []
       ]
+    },
+    "Fork text": {
+      "main": [
+        [
+          {
+            "node": "if texte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fork image": {
+      "main": [
+        [
+          {
+            "node": "if image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fork pdf": {
+      "main": [
+        [
+          {
+            "node": "if pdf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Text Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PDF Result": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Format Image Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -920,7 +977,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "6213fbdb-eed5-42df-9265-b91c8dfbc168",
+  "versionId": "c155ece1-7e36-496e-8187-ab7aee05bda7",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7514434f071a5c810a8c2c99ac94d34a4e7680e3c3fbddb41b4465f5d2957939"
