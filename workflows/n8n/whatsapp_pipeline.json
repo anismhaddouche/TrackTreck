@@ -1,0 +1,930 @@
+{
+  "name": "whatsapp_pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "7b471905-3691-4018-8526-d17145d27d29",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -96,
+        144
+      ],
+      "id": "31f7c70b-d514-46e6-8859-2fd80458e59f",
+      "name": "Webhook",
+      "webhookId": "7b471905-3691-4018-8526-d17145d27d29"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"text\": \"{{$json[\"body\"][\"data\"][\"message\"][\"conversation\"]}}\",\n  \"type\": \"text\",\n  \"sender\": \"{{$json[\"body\"][\"data\"][\"key\"][\"remoteJid\"]}}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        -112
+      ],
+      "id": "7843d6eb-0540-4942-8469-4b952ebc4851",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/chat/getBase64FromMediaMessage/tracktrek",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  message: {\n    key: {\n      id: $json.messageId\n    }\n  },\n  convertToMp4: false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        736,
+        128
+      ],
+      "id": "9aa3eda7-0c24-4b80-84ab-114df85deeb8",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "9YwIDNCZHUP0zTvl",
+          "name": "apikey"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "binaryPropertyName": "image",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        128
+      ],
+      "id": "4d3ed26f-b8f0-4fbf-a9bd-a8b332aa22db",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemma-3-12b-it",
+          "mode": "list",
+          "cachedResultName": "models/gemma-3-12b-it"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are an expert AI specialized in extracting structured travel offers from WhatsApp messages.\n\nYour goal is to analyze unstructured text (coming from WhatsApp messages, possibly including travel offers, flight tickets, or travel packages) and convert it into a structured JSON format.\n\nYou MUST follow strictly the data structure provided below.\n\n---\n\n### CONTEXT\n\nThe input message may contain:\n- Travel packages (séjour, circuit)\n- Flight tickets (billet d’avion)\n- Mixed offers (flight + hotel + excursions)\n- Informal formatting (emojis, line breaks, WhatsApp style)\n\nYou must:\n- Clean and understand the content\n- Extract only relevant information\n- Infer missing values when possible (but stay realistic)\n- Ignore marketing noise and emojis\n\n---\n\n### IMPORTANT RULES\n\n1. Return ONLY valid JSON (no text before or after).\n2. All fields must exist in the output (use null if missing).\n3. Numbers must be numbers (not strings).\n4. Dates must be converted to ISO format when possible.\n5. Prices must be numeric (remove \"DA\", \"DZD\", spaces, etc).\n6. If multiple hotels or prices exist → structure them correctly.\n7. If it's a flight-only offer:\n   - Still return a valid structure\n   - Use minimal fields (no steps if not relevant)\n8. If information is not present → return null.\n\n---\n\n### OUTPUT STRUCTURE (STRICT)\n\n{\n  \"title\": string,\n  \"agency_id\": 1,\n  \"countries\": [string],\n  \"duration_nights\": number,\n  \"airline\": string,\n  \"description\": string,\n  \"itinerary\": object,\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": boolean,\n  \"global_pricing\": null,\n  \"lead_price\": number,\n  \"services\": {\n    \"included\": [string],\n    \"excluded\": [string]\n  },\n  \"steps\": [\n    {\n      \"city\": string,\n      \"step_order\": number,\n      \"duration_nights\": number,\n      \"hotels\": [\n        {\n          \"hotel_id\": null,\n          \"custom_hotel_name\": string,\n          \"is_default\": boolean,\n          \"pricing\": {\n            \"single\": number,\n            \"double\": number,\n            \"triple\": number\n          }\n        }\n      ]\n    }\n  ],\n  \"departures\": [\n    {\n      \"departure_city\": string,\n      \"stock\": null,\n      \"flight_departure_time\": string,\n      \"flight_arrival_time\": null,\n      \"return_flight_departure_time\": string,\n      \"return_flight_arrival_time\": null\n    }\n  ]\n}\n\n---\n\n### SPECIAL CASES\n\n#### Case 1 — Flight Ticket Only\nIf the message is only about flight tickets:\n- Leave \"steps\" empty []\n- Fill airline, departure city, dates, price\n- Set is_global_pricing = true\n\n#### Case 2 — Travel Package\nIf it includes:\n- hotel\n- nights\n- excursions\nThen:\n- fill steps properly\n- extract hotels\n- set is_global_pricing = false if multiple hotel pricing\n\n---\n\n### EXTRACTION LOGIC\n\n- Detect destination → countries + cities\n- Detect airline → e.g. \"Turkish Airlines\"\n- Detect duration → \"7 nights\" → duration_nights = 7\n- Detect price → \"119 000 DA\" → 119000\n- Detect services → included list\n- Detect hotels → extract names + prices if available\n- Detect dates → convert to ISO format if possible\n- Detect departure city → e.g. Alger\n\n---\n\n### INPUT MESSAGE\n\n{{ $json.text || $json.body?.data?.message?.conversation || $json.body?.data?.message?.extendedTextMessage?.text }}\n\n---\n\n### FINAL INSTRUCTION\n\nAnalyze the message carefully and return a structured JSON strictly following the schema above."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1056,
+        -112
+      ],
+      "id": "fa9aee6c-6092-43ae-b967-a431a3c64d99",
+      "name": "Message a model",
+      "retryOnFail": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "1BomVBdGF0UEYVk6",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/chat/getBase64FromMediaMessage/tracktrek",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "429683C4C977415CAAFCCE10F7D57E11"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message.key.id",
+              "value": "={{$json.body.data.key.id}}"
+            },
+            {
+              "name": "message.key.remoteJid",
+              "value": "={{$json.body.data.key.remoteJid}}"
+            },
+            {
+              "name": "message.key.fromMe",
+              "value": "={{$json.body.data.key.fromMe}}"
+            },
+            {
+              "name": "convertToMp4",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        688,
+        400
+      ],
+      "id": "104aa54a-7b00-4b1a-84cb-0f8066292fca",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "binaryPropertyName": "document",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        400
+      ],
+      "id": "a726f705-5a07-4475-8997-e9493281967e",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "evolution",
+        "fileName": "=images/{{$now.toMillis()}}.jpg",
+        "binaryPropertyName": "image",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        240
+      ],
+      "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
+      "name": "Upload a file1",
+      "credentials": {
+        "s3": {
+          "id": "ANqhzJVz1LDd3S6T",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "evolution",
+        "fileName": "=documents/{{$now.toMillis()}}.pdf",
+        "binaryPropertyName": "document",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        512
+      ],
+      "id": "9e1a50bf-cdce-4593-9844-b16140f502d8",
+      "name": "Upload a file2",
+      "credentials": {
+        "s3": {
+          "id": "ANqhzJVz1LDd3S6T",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Récupérer le texte du modèle\nconst raw = $json.content?.parts?.[0]?.text;\n\nif (!raw) {\n  throw new Error(\"No model output found\");\n}\n\n// 2. Nettoyer le texte (au cas où)\nconst cleaned = raw\n  .replace(/^```json\\s*/i, \"\")\n  .replace(/^```\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\n// 3. Parser en JSON\nlet parsed;\n\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  throw new Error(\"Invalid JSON from model:\\n\" + cleaned);\n}\n\n// 4. (OPTIONNEL mais conseillé) corrections métier\n\n// corriger pays\nif (parsed.countries && parsed.countries[0] === \"Turkey\") {\n  parsed.countries = [\"Turquie\"];\n}\n\n// corriger airline si null mais détectable\nif (!parsed.airline && cleaned.toLowerCase().includes(\"turkish\")) {\n  parsed.airline = \"Turkish Airlines\";\n}\n\n// corriger itinerary vide\nif (parsed.itinerary) {\n  const allNull = Object.values(parsed.itinerary).every(v => v === null);\n  if (allNull) {\n    parsed.itinerary = {};\n  }\n}\n\n// corriger dates (format simple → ISO approximatif)\nif (parsed.departures) {\n  parsed.departures = parsed.departures.map(dep => {\n    const convertDate = (d) => {\n      if (!d) return null;\n      const [day, month] = d.split(\"/\");\n      if (!day || !month) return d;\n      return `2026-${month.padStart(2, \"0\")}-${day.padStart(2, \"0\")}T00:00:00Z`;\n    };\n\n    return {\n      ...dep,\n      flight_departure_time: convertDate(dep.flight_departure_time),\n      return_flight_departure_time: convertDate(dep.return_flight_departure_time)\n    };\n  });\n}\n\n// 5. retourner un vrai JSON exploitable\nreturn [\n  {\n    json: parsed\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        -112
+      ],
+      "id": "556e04f7-592e-4141-a855-af38da222024",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "content": "## note \nLe code en java est fait \npour structuré l'output json\n\n",
+        "height": 144,
+        "width": 342
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1456,
+        -208
+      ],
+      "typeVersion": 1,
+      "id": "c87fd133-1523-4473-aed8-7b35c6281acc",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        128
+      ],
+      "id": "10a85b81-6f1c-4d34-8efc-eedac784e4fb",
+      "name": "Wait",
+      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e"
+    },
+    {
+      "parameters": {
+        "amount": 25
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        400
+      ],
+      "id": "eef97951-ec79-48d9-b3e2-85f02a8d8907",
+      "name": "Wait1",
+      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: JSON.parse($json.pages[0].md)\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        400
+      ],
+      "id": "26f2cc67-d54f-4197-8192-2cf7d6267aa4",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: JSON.parse($json.pages[0].md)\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        128
+      ],
+      "id": "84ab9f6a-5ce7-4c2c-a020-71f8505d3e2f",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json;\n\nconst envelope = root.body || {};\nconst data = envelope.data || {};\nconst message = data.message || {};\nconst key = data.key || {};\n\n// ---------- TEXT ----------\nconst conversation = message.conversation || null;\nconst extendedText = message.extendedTextMessage?.text || null;\nconst imageCaption = message.imageMessage?.caption || null;\nconst documentCaption = message.documentMessage?.caption || null;\n\nconst textContent =\n  conversation ||\n  extendedText ||\n  imageCaption ||\n  documentCaption ||\n  null;\n\nconst hasText = !!textContent;\n\n// ---------- IMAGE ----------\nconst imageMessage =\n  message.imageMessage ||\n  message?.viewOnceMessage?.message?.imageMessage ||\n  message?.ephemeralMessage?.message?.imageMessage ||\n  null;\n\nconst hasImage = !!imageMessage;\nconst resolvedImageCaption = imageMessage?.caption || '';\n\n// ---------- PDF ----------\nconst documentMessage =\n  message.documentMessage ||\n  message?.viewOnceMessage?.message?.documentMessage ||\n  message?.ephemeralMessage?.message?.documentMessage ||\n  null;\n\nconst mimeType = documentMessage?.mimetype?.toLowerCase() || '';\nconst fileName = documentMessage?.fileName?.toLowerCase() || '';\n\nconst hasPdf = !!(\n  documentMessage &&\n  (mimeType.includes('pdf') || fileName.endsWith('.pdf'))\n);\n\n// ---------- JOB ID ----------\nconst jobId =\n  'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);\n\n// ---------- SENDER ----------\nconst senderJid = key.remoteJid || envelope.sender || 'unknown';\n\nreturn [{\n  json: {\n    jobId,\n    senderJid,\n\n    messageId: key.id || null,\n    remoteJid: key.remoteJid || null,\n    fromMe: key.fromMe || false,\n    instanceName: envelope.instance || null,\n\n    originalPayload: root,\n    originalBody: envelope,\n\n    hasText,\n    hasImage,\n    hasPdf,\n\n    text: textContent,\n    imageCaption: resolvedImageCaption,\n\n    image: hasImage ? imageMessage : null,\n    pdf: hasPdf ? documentMessage : null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        144
+      ],
+      "id": "60eedb1f-d1c9-40f4-9561-983412a8f1eb",
+      "name": "Detect Content & Generate JobId"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a4ffe2db-344d-4ee2-8f1b-204c182f8682",
+              "leftValue": "={{ $json.hasText }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        304,
+        -96
+      ],
+      "id": "f474fed7-1cd1-48a8-ae3a-f28310d84c0f",
+      "name": "if texte"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ea4ade48-b50b-4387-b40f-b987af534881",
+              "leftValue": "={{ $json.hasPdf }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        288,
+        416
+      ],
+      "id": "a1d6052c-9dfe-412e-8998-5073bf66aa62",
+      "name": "if pdf"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/parsing/job/{{$node[\"LLama Extraction\"].json[\"id\"]}}/result/json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.LLAMA_PARSE_API_KEY }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1776,
+        128
+      ],
+      "id": "1b32de8b-fa5b-4d9f-ba92-3860d4d90035",
+      "name": "Get Parse Result"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.cloud.llamaindex.ai/api/parsing/job/{{$node[\"LLama Extraction1\"].json[\"id\"]}}/result/json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.LLAMA_PARSE_API_KEY }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1792,
+        400
+      ],
+      "id": "d205667a-58ca-48ed-b28d-bed8da2b9c6d",
+      "name": "Get Parse Result 2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloud.llamaindex.ai/api/parsing/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLAMA_PARSE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "image"
+            },
+            {
+              "name": "parsing_instruction",
+              "value": "Tu es un parser d'offres de voyage. Analyse ce document et retourne UNIQUEMENT un objet JSON valide avec cette structure exacte (sans markdown, sans code block): {\"title\": string, \"countries\": string, \"duration_nights\": number, \"airline\": string, \"description\": string, \"is_global_pricing\": boolean, \"global_pricing\": null ou {\"dbl\":number,\"tpl\":number,\"sgl\":number,\"inf\":number,\"chd_2_6\":number,\"chd_5_11\":number}, \"steps\": [{\"city\": string, \"step_order\": number, \"duration_nights\": number, \"hotels\": [{\"hotel_name\": string, \"pricing\": {\"dbl\":number,\"tpl\":number,\"sgl\":number,\"inf\":number,\"chd_2_6\":number,\"chd_5_11\":number}, \"is_default\": boolean}]}], \"services_included\": [string], \"services_excluded\": [string], \"departures\": [{\"departure_city\": string, \"flight_departure_datetime\": string ou null, \"flight_arrival_datetime\": string ou null, \"return_departure_datetime\": string ou null, \"return_arrival_datetime\": string ou null, \"capacity\": number}], \"itinerary\": [{\"day_number\": number, \"title\": string, \"content_items\": [string]}]}"
+            },
+            {
+              "name": "result_type",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1360,
+        128
+      ],
+      "id": "2ac76478-ebb9-4c9e-a697-a34bb5ff2b03",
+      "name": "LLama Extraction",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloud.llamaindex.ai/api/parsing/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLAMA_PARSE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "document"
+            },
+            {
+              "name": "parsing_instruction",
+              "value": "Tu analyses un document contenant une offre de voyage.  Ta tâche est d'extraire les informations visibles dans le document et de retourner UNIQUEMENT un objet JSON valide, sans texte avant ou après, sans markdown, sans commentaire, sans bloc de code.  Respecte STRICTEMENT cette structure :  {   \"title\": string,   \"countries\": string,   \"duration_nights\": number,   \"airline\": string,   \"description\": string,   \"is_global_pricing\": boolean,   \"global_pricing\": null | {     \"dbl\": number,     \"tpl\": number,     \"sgl\": number,     \"inf\": number,     \"chd_2_6\": number,     \"chd_5_11\": number   },   \"steps\": [     {       \"city\": string,       \"step_order\": number,       \"duration_nights\": number,       \"hotels\": [         {           \"hotel_name\": string,           \"pricing\": {             \"dbl\": number,             \"tpl\": number,             \"sgl\": number,             \"inf\": number,             \"chd_2_6\": number,             \"chd_5_11\": number           },           \"is_default\": boolean         }       ]     }   ],   \"services_included\": [string],   \"services_excluded\": [string],   \"departures\": [     {       \"departure_city\": string,       \"flight_departure_datetime\": string | null,       \"flight_arrival_datetime\": string | null,       \"return_departure_datetime\": string | null,       \"return_arrival_datetime\": string | null,       \"capacity\": number     }   ],   \"itinerary\": [     {       \"day_number\": number,       \"title\": string,       \"content_items\": [string]     }   ] }  Règles obligatoires :  1. N'invente jamais une information absente du document. 2. Si une valeur texte n'est pas trouvée, retourne \"\". 3. Si une valeur numérique n'est pas trouvée, retourne 0. 4. Si une date ou heure n'est pas trouvée, retourne null. 5. Si un tableau n'est pas trouvé, retourne []. 6. Si les prix sont portés par des hôtels différents, alors \"is_global_pricing\" = false et \"global_pricing\" = null. 7. Si un seul tableau tarifaire global est visible pour toute l'offre, alors \"is_global_pricing\" = true et remplis \"global_pricing\". 8. Si plusieurs hôtels sont listés, mets \"is_default\": true uniquement pour l'hôtel standard ou principal si cela est clairement identifiable, sinon false. 9. Pour \"countries\", retourne le pays principal de l’offre sous forme de texte simple. 10. Pour \"description\", fais un résumé très court et factuel de l’offre, uniquement à partir des informations visibles. 11. Pour \"departures\", crée une entrée par date de départ visible. 12. Pour \"itinerary\", remplis uniquement si le programme jour par jour est réellement présent. Sinon retourne []. 13. Retourne un JSON brut strictement valide.  N'ajoute rien d'autre que le JSON final. Si certaines sections (steps, departures, itinerary, services) ne sont pas clairement présentes dans le document, retourne des tableaux vides. Tout élément marketing ou avantage (plage, piscine, toboggans, hôtel 4 étoiles, etc.) doit être ajouté dans \"services_included\". duration_nights = nombre de nuitées"
+            },
+            {
+              "name": "result_type",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1328,
+        400
+      ],
+      "id": "98688a37-9caf-4d81-a658-dac2fc5256bc",
+      "name": "LLama Extraction1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nconst partialResults = [];\n\nfor (const item of allItems) {\n  const d = item.json;\n\n  // Case 1: wrapped format\n  if (d && d._hasData === true && d.payload) {\n    partialResults.push(d.payload);\n    continue;\n  }\n\n  // Case 2: already a raw tour object\n  if (\n    d &&\n    (\n      Object.prototype.hasOwnProperty.call(d, 'agency_id') ||\n      Object.prototype.hasOwnProperty.call(d, 'services') ||\n      Object.prototype.hasOwnProperty.call(d, 'steps') ||\n      Object.prototype.hasOwnProperty.call(d, 'departures')\n    )\n  ) {\n    partialResults.push(d);\n  }\n}\n\nconst final = {\n  title: null,\n  agency_id: 1,\n  countries: [],\n  duration_nights: null,\n  airline: null,\n  description: null,\n  itinerary: {},\n  status: 'draft',\n  photo_urls: [],\n  is_global_pricing: false,\n  global_pricing: null,\n  lead_price: null,\n  services: {\n    included: [],\n    excluded: []\n  },\n  steps: [],\n  departures: []\n};\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => v !== null && v !== undefined && v !== ''))];\n}\n\nfunction mergeHotels(existingHotels = [], incomingHotels = []) {\n  const merged = [...existingHotels];\n\n  for (const hotel of incomingHotels || []) {\n    const idx = merged.findIndex(h =>\n      (h.hotel_id ?? null) === (hotel.hotel_id ?? null) &&\n      (h.custom_hotel_name ?? null) === (hotel.custom_hotel_name ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(hotel);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        hotel_id: existing.hotel_id ?? hotel.hotel_id ?? null,\n        custom_hotel_name: existing.custom_hotel_name ?? hotel.custom_hotel_name ?? null,\n        is_default: existing.is_default ?? hotel.is_default ?? false,\n        pricing: {\n          ...(existing.pricing || {}),\n          ...(hotel.pricing || {})\n        }\n      };\n    }\n  }\n\n  return merged;\n}\n\nfunction mergeSteps(existingSteps = [], incomingSteps = []) {\n  const merged = [...existingSteps];\n\n  for (const step of incomingSteps || []) {\n    const idx = merged.findIndex(s =>\n      (s.step_order ?? null) === (step.step_order ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push({\n        city: step.city ?? null,\n        step_order: step.step_order ?? null,\n        duration_nights: step.duration_nights ?? null,\n        hotels: Array.isArray(step.hotels) ? step.hotels : []\n      });\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        city: existing.city ?? step.city ?? null,\n        step_order: existing.step_order ?? step.step_order ?? null,\n        duration_nights: existing.duration_nights ?? step.duration_nights ?? null,\n        hotels: mergeHotels(existing.hotels || [], step.hotels || [])\n      };\n    }\n  }\n\n  return merged.sort((a, b) => (a.step_order ?? 9999) - (b.step_order ?? 9999));\n}\n\nfunction mergeDepartures(existingDeps = [], incomingDeps = []) {\n  const merged = [...existingDeps];\n\n  for (const dep of incomingDeps || []) {\n    const idx = merged.findIndex(d =>\n      (d.departure_city ?? null) === (dep.departure_city ?? null) &&\n      (d.flight_departure_time ?? null) === (dep.flight_departure_time ?? null) &&\n      (d.return_flight_departure_time ?? null) === (dep.return_flight_departure_time ?? null)\n    );\n\n    if (idx === -1) {\n      merged.push(dep);\n    } else {\n      const existing = merged[idx];\n      merged[idx] = {\n        departure_city: existing.departure_city ?? dep.departure_city ?? null,\n        stock: existing.stock ?? dep.stock ?? null,\n        flight_departure_time: existing.flight_departure_time ?? dep.flight_departure_time ?? null,\n        flight_arrival_time: existing.flight_arrival_time ?? dep.flight_arrival_time ?? null,\n        return_flight_departure_time: existing.return_flight_departure_time ?? dep.return_flight_departure_time ?? null,\n        return_flight_arrival_time: existing.return_flight_arrival_time ?? dep.return_flight_arrival_time ?? null\n      };\n    }\n  }\n\n  return merged;\n}\n\nfor (const p of partialResults) {\n  final.title = final.title ?? p.title ?? null;\n  final.agency_id = final.agency_id ?? p.agency_id ?? 1;\n  final.duration_nights = final.duration_nights ?? p.duration_nights ?? null;\n  final.airline = final.airline ?? p.airline ?? null;\n  final.description = final.description ?? p.description ?? null;\n  final.lead_price = final.lead_price ?? p.lead_price ?? null;\n\n  if (p.status && final.status === 'draft') {\n    final.status = p.status;\n  }\n\n  if (p.is_global_pricing === true) {\n    final.is_global_pricing = true;\n    final.global_pricing = final.global_pricing ?? p.global_pricing ?? null;\n  }\n\n  final.countries = uniqueStrings([...(final.countries || []), ...(p.countries || [])]);\n  final.photo_urls = uniqueStrings([...(final.photo_urls || []), ...(p.photo_urls || [])]);\n\n  final.services.included = uniqueStrings([\n    ...(final.services.included || []),\n    ...((p.services && p.services.included) || [])\n  ]);\n\n  final.services.excluded = uniqueStrings([\n    ...(final.services.excluded || []),\n    ...((p.services && p.services.excluded) || [])\n  ]);\n\n  final.itinerary = {\n    ...(final.itinerary || {}),\n    ...(p.itinerary || {})\n  };\n\n  final.steps = mergeSteps(final.steps, p.steps || []);\n  final.departures = mergeDepartures(final.departures, p.departures || []);\n}\n\nreturn [{ json: final }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        144
+      ],
+      "id": "2b51d0a5-1412-4c12-a021-a2c4b761ac25",
+      "name": "Collect & Dynamic Merge"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2736,
+        144
+      ],
+      "id": "c295a024-5fd5-41df-9f78-922e89c8951b",
+      "name": "Respond with Merged Result"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2128,
+        -96
+      ],
+      "id": "26df65f8-c10a-4e4a-be8f-9f265025cdcd",
+      "name": "Merge"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2336,
+        144
+      ],
+      "id": "3663e08b-4e14-491e-aed7-ec33417ce8e6",
+      "name": "Merge 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d419a435-56eb-4f73-bdf0-5f159c488f50",
+              "leftValue": "={{ $json.hasImage }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        336,
+        144
+      ],
+      "id": "3b5b79ef-4a0a-4744-8847-0f76744692f0",
+      "name": "if image",
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Detect Content & Generate JobId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Upload a file1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LLama Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Upload a file2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LLama Extraction1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file1": {
+      "main": [
+        []
+      ]
+    },
+    "Upload a file2": {
+      "main": [
+        []
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Parse Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Get Parse Result 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Content & Generate JobId": {
+      "main": [
+        [
+          {
+            "node": "if texte",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if pdf",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if texte": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "if pdf": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Parse Result": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Parse Result 2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLama Extraction": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLama Extraction1": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect & Dynamic Merge": {
+      "main": [
+        [
+          {
+            "node": "Respond with Merged Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge 2": {
+      "main": [
+        [
+          {
+            "node": "Collect & Dynamic Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "if image": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6213fbdb-eed5-42df-9265-b91c8dfbc168",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7514434f071a5c810a8c2c99ac94d34a4e7680e3c3fbddb41b4465f5d2957939"
+  },
+  "id": "FRUnC4ibP8dhLXyn",
+  "tags": []
+}
