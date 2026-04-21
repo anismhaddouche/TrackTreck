@@ -52,25 +52,35 @@ Le workflow `whatsapp_pipeline` implémente une architecture **Fan-Out / Fan-In*
 graph TD
     A["📩 Webhook<br/>(Réception WhatsApp)"] --> B["🔍 Detect Content<br/>& Generate JobId"]
     
-    B --> C{"hasText ?"}
-    B --> D{"hasImage ?"}
-    B --> E{"hasPdf ?"}
+    B --> N["🛡️ Detect Noise<br/>(Classification)"]
+    N --> VO{"IF Valid Offer ?"}
     
-    C -->|✅ Oui| F["📝 Branche TEXTE<br/>Gemini AI"]
+    VO -->|✅ Oui| C{"hasText ?"}
+    VO -->|✅ Oui| D{"hasImage ?"}
+    VO -->|✅ Oui| E{"hasPdf ?"}
+    
+    C -->|✅ Oui| NT["🛡️ Detect Noise Text"]
+    NT --> VTO{"IF Valid Text ?"}
+    VTO -->|✅ Oui| F["📝 Branche TEXTE<br/>Gemini AI"]
+    
     D -->|✅ Oui| G["🖼️ Branche IMAGE<br/>LlamaIndex + S3"]
     E -->|✅ Oui| H["📄 Branche PDF<br/>LlamaIndex + S3"]
     
-    F --> I["🔀 Merge 1<br/>(Texte + Image)"]
-    G --> I
+    F --> FT["⚙️ Format Text Result"]
+    G --> FI["⚙️ Format Image Result"]
+    H --> FP["⚙️ Format PDF Result"]
+    
+    FT --> I["🔀 Merge 1<br/>(Texte + Image)"]
+    FI --> I
     I --> J["🔀 Merge 2<br/>(Merge 1 + PDF)"]
-    H --> J
+    FP --> J
     
     J --> K["⚙️ Collect &<br/>Dynamic Merge"]
     K --> L["✅ Respond with<br/>Merged Result"]
 ```
 
 > [!IMPORTANT]
-> Un même message WhatsApp peut contenir **plusieurs types de contenu simultanément** (ex : un texte + une image). Les branches s'activent de manière indépendante selon les flags `hasText`, `hasImage`, `hasPdf`. Les branches non pertinentes ne s'exécutent tout simplement pas.
+> Un même message WhatsApp peut contenir **plusieurs types de contenu simultanément** (ex : un texte + une image). Un **filtre anti-bruit global** (`Detect Noise`) est appliqué pour éviter de traiter des messages non pertinents (salutations, demandes de visa, etc.). Les branches s'activent de manière indépendante selon les flags `hasText`, `hasImage`, `hasPdf`.
 
 ---
 
@@ -103,6 +113,8 @@ Cette phase est le **tronc commun** du workflow. Tous les messages passent par c
 |-------|------|-------------|
 | 1 | `Webhook` | Point d'entrée HTTP — reçoit le payload WhatsApp d'Evolution API |
 | 2 | `Detect Content & Generate JobId` | Analyse le message, détecte les types de contenu, génère un identifiant de job unique |
+| 3 | `Detect Noise` | Analyse heuristique du message. Attribue un score basé sur les mots-clés (voyage, vol, prix vs bonjour, cv, visa) et classifie le flux (`valid_travel_offer`, `noise`, `excluded_visa_offer`, etc.) |
+| 4 | `IF Valid Offer` | Stoppe l'exécution si le message est classifié comme bruit. Route vers les branches conditionnelles (fan-out) si valide. |
 
 ---
 
@@ -115,18 +127,19 @@ Cette branche traite le **contenu textuel** du message WhatsApp (conversation si
 | Ordre | Nœud | Rôle métier |
 |-------|------|-------------|
 | 1 | `if texte` | Vérifie la présence de texte dans le message |
-| 2 | `Edit Fields` | Formate le texte brut en objet structuré `{text, type, sender}` |
-| 3 | `Message a model` | Envoie le texte au modèle **Gemma 3 12B** (Google Gemini) avec un prompt d'extraction spécialisé voyage |
-| 4 | `Code in JavaScript` | Parse la réponse du modèle IA, nettoie le JSON, applique des corrections métier |
+| 2 | `Detect Noise Text` | Refiltre spécifiquement le texte pour ignorer les textes sans valeur métier (ex: un flyer image valide mais accompagné d'un simple "ok") |
+| 3 | `IF Valid Text Offer` | Vérifie si le booléen `is_valid_offer` est vrai avant de solliciter le modèle IA |
+| 4 | `Edit Fields` | Formate le texte brut en objet structuré `{text, type, sender}` |
+| 5 | `Message a model` | Envoie le texte au modèle **Gemma 3 12B** (Google Gemini) avec un prompt d'extraction spécialisé voyage |
+| 6 | `Format Text Result` | Parse la réponse du modèle IA, nettoie le JSON, applique des corrections métier et enrobe le résultat payload (`_hasData`) |
 
 > [!NOTE]
 > Le modèle IA utilisé est `gemma-3-12b-it` via l'API Google Gemini. Le prompt est entièrement en anglais et contient le schéma JSON de sortie attendu. Le nœud est configuré avec `retryOnFail: true` pour résilience.
 
-**Corrections métier automatiques (Code in JavaScript)** :
+**Corrections métier automatiques (`Format Text Result`)** :
 - Normalisation des noms de pays (ex : `Turkey` → `Turquie`)
-- Détection heuristique de la compagnie aérienne si absente
 - Nettoyage des itinéraires vides (tous les champs `null` → objet vide)
-- Conversion des dates au format ISO 8601
+- Typage fort des nombres et déduplication des listes
 
 ---
 
@@ -145,7 +158,7 @@ Cette branche traite les **images** (photos d'affiches, flyers, captures d'écra
 | 4b | `LLama Extraction` | **Extraction** : Envoi de l'image à LlamaIndex Cloud pour parsing intelligent |
 | 5 | `Wait` | Pause de **15 secondes** — temps de traitement LlamaIndex |
 | 6 | `Get Parse Result` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
-| 7 | `Code in JavaScript2` | Extrait le JSON du résultat markdown retourné par LlamaIndex |
+| 7 | `Format Image Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
 
 > [!NOTE]
 > Les étapes 4a (archivage S3) et 4b (extraction LlamaIndex) s'exécutent **en parallèle** après la conversion en fichier. L'archivage est un "fire-and-forget" — son résultat n'alimente pas la suite du pipeline.
@@ -167,7 +180,7 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | 4b | `LLama Extraction1` | **Extraction** : Envoi du PDF à LlamaIndex Cloud avec des instructions de parsing très détaillées |
 | 5 | `Wait1` | Pause de **25 secondes** — temps de traitement LlamaIndex (plus long pour les PDF) |
 | 6 | `Get Parse Result 2` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
-| 7 | `Code in JavaScript1` | Extrait le JSON du résultat markdown retourné par LlamaIndex |
+| 7 | `Format PDF Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
 
 > [!TIP]
 > Le temps d'attente est de 25 secondes pour les PDF (vs 15 secondes pour les images) car les documents PDF contiennent généralement plus de contenu à analyser (tableaux de prix, programmes jour par jour).
@@ -312,11 +325,8 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 |-----------|----------------------|----------------------|
 | **Type** | `n8n-nodes-base.httpRequest` | `n8n-nodes-base.httpRequest` |
 | **URL** | `http://host.docker.internal:8080/chat/getBase64FromMediaMessage/tracktrek` | idem |
-| **Auth** | Header Auth (API Key credential) | Header direct (API Key en clair) |
+| **Auth** | Header Auth (`apikey` credential) | Header Auth (`apikey` credential) |
 | **Rôle métier** | Appelle l'API Evolution pour récupérer le contenu binaire du média en Base64. Le message WhatsApp ne contient pas directement le fichier — il faut le télécharger via l'API en passant l'ID du message. |
-
-> [!WARNING]
-> Le nœud `HTTP Request1` (PDF) expose la clé API en clair dans les headers (`429683C4C977415CAAFCCE10F7D57E11`). Il est recommandé de migrer vers un credential n8n comme le fait déjà le nœud `HTTP Request` (Image).
 
 ---
 
@@ -378,15 +388,11 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.13 `Code in JavaScript1` / `Code in JavaScript2` (Parse résultat LlamaIndex)
+### 4.13 `Format Text Result` / `Format Image Result` / `Format PDF Result`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.code` |
-| **Rôle métier** | Extrait le contenu JSON depuis la structure de réponse LlamaIndex. La réponse contient un tableau `pages` dont on lit le champ `md` (markdown) du premier élément. |
-
-```javascript
-return [{ json: JSON.parse($json.pages[0].md) }];
-```
+| **Rôle métier** | Parse le résultat natif de l'IA (LLM ou LlamaIndex), applique d'importantes corrections métier, gère les potentiels échecs, harmonise les types et enveloppe le tout dans un format standardisé `{ _hasData, extractionType, source, payload }` attendu par le Merge de fin. |
 
 ---
 
@@ -614,7 +620,25 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 
 ---
 
+## 9. Axes d'amélioration
+
+Bien que le workflow actuel soit fonctionnel, plusieurs axes peuvent être envisagés pour accroître la maintenabilité, les performances et la résilience :
+
+1. **Parallélisme natif via sub-workflows** :  
+   Actuellement, les branches Image et PDF exécutent des pauses (`Wait` de 15s/25s) qui bloquent potentiellement d'autres opérations si n8n n'est pas optimisé pour l'asynchronisme massif. Sous-traiter l'extraction IA dans un Sub-Workflow n8n appelé en mode *Background/Non-blocking* pourrait accélérer le Fan-Out.
+
+2. **Webhook Webhooks LlamaParse (Push vs Pull)** :  
+   Au lieu d'utiliser des nœuds `Wait` arbitraires limités dans le temps, LlamaCloud supporte probablement les webhooks de callback à la fin d'un job. Repenser la récupération des extractions de fichiers avec un Webhook Catch réduirait l'attente inutile et éviterait les timeouts.
+
+3. **Validation par schéma stricte du payload** :  
+   Bien que les blocs `Format * Result` fassent un nettoyage manuel robuste, l'introduction d'un validateur JSON Schema externe (tel qu'un appel simple à Ajv via Node) garantit qu'aucune structure inattendue ne vient corrompre la base de données.
+
+4. **Gestion unifiée des rejets (bruit)** :  
+   Les messages identifiés comme `noise` ou `excluded_visa_offer` par `Detect Noise` s'arrêtent silencieusement dans le pipeline. Un système de logging léger ou de réponse silencieuse (avec accusé de réception 200 vide) peut éviter de laisser les requêtes Evolution "en suspens" ou provoquer des timeouts non attrapés dans les logs d'Evolution API.
+
+---
+
 > [!NOTE]
-> **Dernière mise à jour** : 15 avril 2026  
+> **Dernière mise à jour** : Avril 2026  
 > **Workflow source** : [`whatsapp_pipeline.json`](../workflows/n8n/whatsapp_pipeline.json)  
-> **Version du workflow** : `6213fbdb-eed5-42df-9265-b91c8dfbc168`
+> **Version du workflow** : `3c849dde-29d6-4bde-b239-e9787df37ac0`

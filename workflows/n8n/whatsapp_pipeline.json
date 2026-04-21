@@ -11,8 +11,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -96,
-        144
+        -288,
+        160
       ],
       "id": "31f7c70b-d514-46e6-8859-2fd80458e59f",
       "name": "Webhook",
@@ -27,7 +27,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1088,
+        1600,
         -96
       ],
       "id": "7843d6eb-0540-4942-8469-4b952ebc4851",
@@ -94,14 +94,14 @@
       "parameters": {
         "modelId": {
           "__rl": true,
-          "value": "models/gemma-3-12b-it",
+          "value": "models/gemini-3.1-flash-lite-preview",
           "mode": "list",
-          "cachedResultName": "models/gemma-3-12b-it"
+          "cachedResultName": "models/gemini-3.1-flash-lite-preview"
         },
         "messages": {
           "values": [
             {
-              "content": "=You are a travel offer extraction engine.\n\nYour goal is to transform unstructured travel content into a STRICT business JSON format.\n\nYou MUST follow EXACTLY the provided schema and logic.\n\nReturn ONLY JSON.\nNo text, no explanation.\n\nText:\n{{$json.text}}\n\n----------------------------------\n\nCRITICAL BEHAVIOR:\n\n- DO NOT copy the raw text\n- DO NOT paste paragraphs\n- You MUST extract, interpret, and map data\n- You MUST clean and normalize values\n\n\n\n----------------------------------\n\nBUSINESS UNDERSTANDING (VERY IMPORTANT):\n\nThis JSON represents a TOUR:\n\n- A tour = a travel package\n- steps = cities visited\n- each step contains hotels\n- services are global (NOT per step)\n- itinerary is descriptive (NOT structured like steps)\n- departures are real dated departures only\n\n----------------------------------\n\nFIELD RULES:\n\n- title:\n  → create a clean marketing title (NOT copied text)\n\n- countries:\n  → MUST be real country names inferred from cities\n\n- duration_nights:\n  → You MUST count nights, not days.\n   at step level must represent the number of nights spent in that city.\n\n\n- airline:\n  → extract ONLY airline name\n\n- description:\n  → short clean summary (max 2 sentences)\n  → NO copy paste\n\n- itinerary:\n  → build day-by-day if possible\n  → independent from steps\n\n- services:\n  → split into included / excluded lists\n\n- lead_price:\n  → MUST be the cheapest possible total price across:\n    → cheapest hotel options in each step\n\nGLOBAL PRICING RULE:\n- \"is_global_pricing\" = true only if there is exactly ONE single general price for the entire offer.\n- If you detect more than one price anywhere in the offer (hotel prices, room prices, options, etc.), then \"is_global_pricing\" = false.\n\nGLOBAL PRICING VALUE RULE:\n- If \"is_global_pricing\" = true, then \"global_pricing\" MUST be equal to the single price found in the offer.\n- If \"is_global_pricing\" = false, then \"global_pricing\" MUST be null.\n----------------------------------\n\nSTEPS (STRICT):\n\n- each step = a city\n- step_order must be sequential (1,2,3...)\n- duration_nights = nights spent in that city not day\n- hotels MUST be inside steps\n\n----------------------------------\n\nHOTELS:\n\n- extract hotel names if present\n- if unknown → custom_hotel_name\n- NEVER invent hotel_id\n- pricing only if explicitly found\n\n----------------------------------\nIMPORTANT BUSINESS RULES:\n\nGLOBAL PRICING:\n- \"is_global_pricing\" = true only if there is exactly one single visible price for the entire offer.\n- If there are two or more prices anywhere in the offer, \"is_global_pricing\" = false.\n- Multiple hotel prices, room prices, traveler prices, or package variants mean \"is_global_pricing\" = false.\n\nIMPORTANT EXTRACTION RULES:\n\nDEPARTURES:\n- If the offer contains a date range like \"Du dd/mm Au dd/mm\", you MUST detect it as one real departure session.\n- The first date is the outbound departure date.\n- The second date is the return departure date.\n- If the year is missing, use the current year (2026).\n- YEAR RULE:\n- If a date is found without a year (e.g. dd/mm), you MUST use the current year(2026).\n- Map date ranges to the departures schema:\n  - \"flight_departure_time\" = outbound date at 00:00:00Z\n  - \"return_flight_departure_time\" = return date at 00:00:00Z\n- Do NOT create custom fields like \"departure_date\" or \"return_date\".\n- Only use the exact schema fields.\n\nHOTELS:\n- You MUST extract the hotel names exactly from the text when they are explicitly mentioned.\n- Hotel names must be stored inside each step under:\n  \"custom_hotel_name\"\n- Do NOT use \"hotel_name\".\n- If the hotel is mentioned in free text and no database id is known:\n  - \"hotel_id\" = null\n  - \"custom_hotel_name\" = extracted hotel name\n- Keep the hotel name clean, but do not invent or replace it with another hotel.\n\nNIGHTS:\n- You MUST count nights, not days.\n- Never convert days into nights.\n- \"duration_nights\" at step level must represent the number of nights spent in that city.\n- \"duration_nights\" at tour level must represent the total number of nights of the stay.\n- If the offer provides both a date range and explicit nights per hotel/step, prioritize the explicit nights written in the text for the steps.\n\n----------------------------------\n\nSTRICT CONSTRAINTS:\n\n- agency_id = 1\n- status = \"draft\"\n- NO hallucination\n- NO invented values\n- NO extra fields\n- MUST match EXACT schema\n\n----------------------------------\n\nSCHEMA TO FOLLOW EXACTLY:\n\n{\n  \"title\": null,\n  \"agency_id\": 1,\n  \"countries\": [],\n  \"duration_nights\": null,\n  \"airline\": null,\n  \"description\": null,\n  \"itinerary\": {},\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": false,\n  \"global_pricing\": null,\n  \"lead_price\": null,\n  \"services\": {\n    \"included\": [],\n    \"excluded\": []\n  },\n  \"steps\": [],\n  \"departures\": []\n}"
+              "content": "=You are a travel offer extraction engine.\n\nYour goal is to transform unstructured travel content into a STRICT business JSON format.\n\nYou MUST follow EXACTLY the provided schema and logic.\n\nReturn ONLY JSON.\nNo text, no explanation.\nNo markdown.\nNo code fences.\n\nText:\n{{$json.text}}\n\n----------------------------------\nCORE BEHAVIOR\n\n- DO NOT copy raw text\n- DO NOT paste paragraphs\n- You MUST extract, interpret, normalize, and map data\n- You MUST return exactly one valid JSON object\n- NO hallucination\n- NO invented values\n- NO extra fields\n- MUST match EXACT schema\n\n----------------------------------\nBUSINESS UNDERSTANDING\n\nThis JSON represents a TOUR:\n\n- a tour = a travel package\n- steps = cities visited\n- each step contains hotels\n- services are global, not per step\n- itinerary is descriptive and independent from steps\n- departures are real dated departure sessions only\n\n----------------------------------\nFIELD RULES\n\n- title:\n  create a clean marketing title, not copied raw text\n\n- countries:\n  must be real country names inferred from destinations\n  never use emojis or flags\n\n- duration_nights:\n  must represent the TOTAL number of nights of the trip\n\n- airline:\n  extract only the airline name\n\n- description:\n  short clean summary, maximum 2 sentences\n  no copy-paste\n\n- itinerary:\n  build day-by-day only if enough information exists\n  itinerary must stay independent from steps\n\n- services:\n  split into included / excluded\n\n- lead_price:\n\n  lead_price = the MINIMAL realistic entry total package price (\"prix d'appel\", \"à partir de\").\n\n  If the trip has multiple steps/cities:\n  - compute the cheapest valid combination across all mandatory steps.\n\n  Example:\n  Step Antalya has hotels:\n    Hotel A = 100\n    Hotel B = 130\n\n  Step Istanbul has hotel:\n    Hotel C = 80\n\n  Then lead_price = 100 + 80 = 180\n\n  If one step has multiple hotel choices:\n  - choose the cheapest valid hotel price for that step.\n\n  If room categories exist (quadruple / triple / double / single):\n  - choose the cheapest realistic visible room occupancy price,\n  usually quadruple first, then triple, then double.\n\nWhen several room prices exist, lead_price = cheapest adult standard package price,\nnot infant-only child-only promotional price.\n------------------------------------------------------\n  Never sum incompatible optional extras.\nDEPARTURES:\n- If the offer contains a date range like \"Du dd/mm Au dd/mm\", you MUST detect it as one real departure session.\n- The first date is the outbound departure date.\n- The second date is the return departure date.\n- If the year is missing, use the current year (2026).\n- YEAR RULE:\n- If a date is found without a year (e.g. dd/mm), you MUST use the current year(2026).\n- Map date ranges to the departures schema:\n  - \"flight_departure_time\" = outbound date at 00:00:00Z\n  - \"return_flight_departure_time\" = return date at 00:00:00Z\n- Do NOT create custom fields like \"departure_date\" or \"return_date\".\n- Only use the exact schema fields.\n\n----------------------------------\nGLOBAL PRICING RULES\n\nglobal_pricing may be null OR a structured room-pricing object.\n\nAllowed format:\n\nglobal_pricing = null\n\nOR\n\nglobal_pricing = {\n  \"dbl\": number,\n  \"tpl\": number,\n  \"sgl\": number,\n  \"inf\": number,\n  \"chd_2_6\": number,\n  \"chd_5_11\": number\n}\n\nRules:\n\n- is_global_pricing = true if the offer exposes one unified package pricing table\n  (double / triple / single / child / infant prices).\n\n- is_global_pricing = true also if only one single global price exists.\n\n- if multiple independent hotel-step prices exist, then is_global_pricing = false\n\n- if room prices exist:\n  map values when visible:\n    dbl = double room\n    tpl = triple room\n    sgl = single room\n    inf = infant\n    chd_2_6 = child 2 to 6 years\n    chd_5_11 = child 5 to 11 years\n\n- missing values = null\n\n- prices must be numeric only\n\nIf no explicit price exists:\n- lead_price = null\n- global_pricing = null\n- is_global_pricing = false\n\n\n----------------------------------\nDURATION INFERENCE RULES\n\nYou must determine duration_nights using this exact priority order:\n\n1. If step-level durations are explicitly visible, they are the source of truth.\n2. Otherwise, if a total number of nights is explicitly visible, use it directly.\n3. Otherwise, if only a total number of days is explicitly visible, infer nights as total_days - 1.\n4. Otherwise, if only a date range is visible, infer nights from the date difference.\n\nConsistency rules:\n- If multiple steps exist and step-level durations are visible, duration_nights MUST equal the sum of all step.duration_nights.\n- If both total nights and step-level durations are visible, they must be consistent.\n- If both total days and total nights are visible, prefer total nights and use total days only as a consistency check.\n- If date range, total nights, and step-level durations all exist, prefer the most granular source:\n  step-level durations > total nights > days-derived value > date-range-derived value.\n- Never ignore explicit structured duration information.\n\n----------------------------------\nSTEPS RULES\n\n- each step = one city\n- step_order must be sequential: 1, 2, 3...\n- duration_nights at step level = nights spent in that city\n- hotels must be nested inside the correct step\n- if multiple cities are present, create multiple steps\n- if a city is visible, step.city must not be null\n\n----------------------------------\nHOTEL RULES\n\n\n- hotel names may appear with stars, abbreviations, or marketing text.\n  Detect and clean hotel names intelligently.\n\n- Examples:\n  \"Royal Azur 5*\" => hotel = Royal Azur\n  \"Sheraton Antalya Hotel\" => hotel = Sheraton Antalya\n  \"Hôtel Titanic Deluxe Lara\" => hotel = Titanic Deluxe Lara\n\n- Prefer proper hotel entities over generic text.\n\n- If several hotels are listed under one city:\n  create multiple hotel options inside the same step.\n\n- extract hotel names exactly as stated when visible\n- hotel_id must always be null unless a real database id is explicitly provided\n- store hotel name in custom_hotel_name\n- do not invent pricing\n- pricing fields stay null unless explicitly found\n- if a hotel is clearly associated with a city, place it inside that city's step\n\n----------------------------------\nDEPARTURE RULES\n\n- departure_city:\n  default value = \"Alger\"\n\n- If another city is explicitly visible\n  (Oran, Constantine, Annaba, Setif, etc),\n  use that city instead.\n\n- Never leave departure_city null.\n\n- if the offer contains one date range, detect it as one real departure session\n- outbound date maps to flight_departure_time\n- return date maps to return_flight_departure_time\n- if year is missing, use current year: 2026\n- use only the exact departures schema fields\n- do not invent custom date fields\n\n----------------------------------\nSTRICT FINAL VALIDATION BEFORE OUTPUT\n\nBefore returning JSON, you MUST verify all of the following:\n\n- agency_id = 1\n- status = \"draft\"\n- prices are numeric\n- if is_global_pricing = true, then global_pricing is numeric and lead_price = global_pricing unless a cheaper explicit valid price exists\n- if multiple step durations are present, duration_nights = sum(step.duration_nights)\n- if both days and nights exist, do not let days override visible nights\n- if both total duration and date range exist, ensure internal consistency\n- if a city is visible in the offer, it must appear in steps\n- if a hotel is visibly linked to a city, it must appear in that step\n\n----------------------------------\nSCHEMA TO FOLLOW EXACTLY\n\n{\n  \"title\": null,\n  \"agency_id\": 1,\n  \"countries\": [],\n  \"duration_nights\": null,\n  \"airline\": null,\n  \"description\": null,\n  \"itinerary\": {},\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": false,\n  \"global_pricing\": {\n  \"dbl\": null,\n  \"tpl\": null,\n  \"sgl\": null,\n  \"inf\": null,\n  \"chd_2_6\": null,\n  \"chd_5_11\": null\n},\n  \"lead_price\": null,\n  \"services\": {\n    \"included\": [],\n    \"excluded\": []\n  },\n  \"steps\": [],\n  \"departures\": []\n}"
             }
           ]
         },
@@ -111,7 +111,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
       "position": [
-        1488,
+        1920,
         -96
       ],
       "id": "fa9aee6c-6092-43ae-b967-a431a3c64d99",
@@ -128,13 +128,11 @@
       "parameters": {
         "method": "POST",
         "url": "http://host.docker.internal:8080/chat/getBase64FromMediaMessage/tracktrek",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.EVOLUTION_API_KEY }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -142,26 +140,8 @@
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "message.key.id",
-              "value": "={{$json.body.data.key.id}}"
-            },
-            {
-              "name": "message.key.remoteJid",
-              "value": "={{$json.body.data.key.remoteJid}}"
-            },
-            {
-              "name": "message.key.fromMe",
-              "value": "={{$json.body.data.key.fromMe}}"
-            },
-            {
-              "name": "convertToMp4",
-              "value": "false"
-            }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  message: {\n    key: {\n      id: $json.messageId\n    }\n  },\n  convertToMp4: false\n} }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -171,7 +151,13 @@
         416
       ],
       "id": "104aa54a-7b00-4b1a-84cb-0f8066292fca",
-      "name": "HTTP Request1"
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "9YwIDNCZHUP0zTvl",
+          "name": "apikey"
+        }
+      }
     },
     {
       "parameters": {
@@ -201,7 +187,7 @@
       "typeVersion": 1,
       "position": [
         1552,
-        240
+        256
       ],
       "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
       "name": "Upload a file1",
@@ -237,7 +223,7 @@
     },
     {
       "parameters": {
-        "amount": 15
+        "amount": 25
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
@@ -270,8 +256,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        112,
-        144
+        -80,
+        160
       ],
       "id": "60eedb1f-d1c9-40f4-9561-983412a8f1eb",
       "name": "Detect Content & Generate JobId"
@@ -305,7 +291,7 @@
       "typeVersion": 2.3,
       "position": [
         736,
-        -80
+        -64
       ],
       "id": "f474fed7-1cd1-48a8-ae3a-f28310d84c0f",
       "name": "if texte"
@@ -422,7 +408,7 @@
             },
             {
               "name": "parsing_instruction",
-              "value": "You are an expert travel offer extraction assistant.  Return ONLY a valid JSON object. No markdown, no explanation, no code fences.  You MUST strictly follow this exact schema and meaning:  {   \"title\": null,   \"agency_id\": 1,   \"countries\": [],   \"duration_nights\": null,   \"airline\": null,   \"description\": null,   \"itinerary\": {},   \"status\": \"draft\",   \"photo_urls\": [],   \"is_global_pricing\": false,   \"global_pricing\": null,   \"lead_price\": null,   \"services\": {     \"included\": [],     \"excluded\": []   },   \"steps\": [     {       \"city\": null,       \"step_order\": 1,       \"duration_nights\": null,       \"hotels\": [         {           \"hotel_id\": null,           \"custom_hotel_name\": null,           \"is_default\": true,           \"pricing\": {             \"single\": null,             \"double\": null,             \"triple\": null           }         }       ]     }   ],   \"departures\": [     {       \"departure_city\": null,       \"stock\": null,       \"flight_departure_time\": null,       \"flight_arrival_time\": null,       \"return_flight_departure_time\": null,       \"return_flight_arrival_time\": null     }   ] }  STRICT RULES: - agency_id must always be 1 - status must be \"draft\" unless explicitly known otherwise - countries must contain real country names, never emojis - title should be inferred when possible - lead_price must be the minimum main price - steps are city stages - hotels belong inside steps - services are offer-level only - itinerary is independent from steps - departures must only contain reliable departure sessions - do not invent unsupported fields - return only JSON"
+              "value": "You are a travel offer extraction engine.\n\nYour goal is to transform unstructured travel content into a STRICT business JSON format.\n\nYou MUST follow EXACTLY the provided schema and logic.\n\nReturn ONLY JSON.\nNo text, no explanation.\n\n\n----------------------------------\n\nCRITICAL BEHAVIOR:\n\n- DO NOT copy the raw text\n- DO NOT paste paragraphs\n- You MUST extract, interpret, and map data\n- You MUST clean and normalize values\n\n\n\n----------------------------------\n\nBUSINESS UNDERSTANDING (VERY IMPORTANT):\n\nThis JSON represents a TOUR:\n\n- A tour = a travel package\n- steps = cities visited\n- each step contains hotels\n- services are global (NOT per step)\n- itinerary is descriptive (NOT structured like steps)\n- departures are real dated departures only\n\n----------------------------------\n\nFIELD RULES:\n\n- title:\n  → create a clean marketing title (NOT copied text)\n\n- countries:\n  → MUST be real country names inferred from cities\n\n- duration_nights:\n  → You MUST count nights, not days.\n   at step level must represent the number of nights spent in that city.\n\n\n- airline:\n  → extract ONLY airline name\n\n- description:\n  → short clean summary (max 2 sentences)\n  → NO copy paste\n\n\n- services:\n  → split into included / excluded lists\n\n- lead_price:\n  → MUST be the cheapest possible total price across:\n    → cheapest hotel options in each step\n\nGLOBAL PRICING RULE:\n- \"is_global_pricing\" = true only if there is exactly ONE single general price for the entire offer.\n- If you detect more than one price anywhere in the offer (hotel prices, room prices, options, etc.), then \"is_global_pricing\" = false.\n\nGLOBAL PRICING VALUE RULE:\n- If \"is_global_pricing\" = true, then \"global_pricing\" MUST be equal to the single price found in the offer.\n- If \"is_global_pricing\" = false, then \"global_pricing\" MUST be null.\n----------------------------------\n\nSTEPS (STRICT):\n\n- each step = a city\n- step_order must be sequential (1,2,3...)\n- duration_nights = nights spent in that city not day\n- hotels MUST be inside steps\n\n----------------------------------\n\nHOTELS:\n\n- extract hotel names if present\n- if unknown → custom_hotel_name\n- NEVER invent hotel_id\n- pricing only if explicitly found\n\n----------------------------------\nIMPORTANT BUSINESS RULES:\n\nGLOBAL PRICING:\n- \"is_global_pricing\" = true only if there is exactly one single visible price for the entire offer.\n- If there are two or more prices anywhere in the offer, \"is_global_pricing\" = false.\n- Multiple hotel prices, room prices, traveler prices, or package variants mean \"is_global_pricing\" = false.\n\nIMPORTANT EXTRACTION RULES:\n\nDEPARTURES:\n- If the offer contains a date range like \"Du dd/mm Au dd/mm\", you MUST detect it as one real departure session.\n- The first date is the outbound departure date.\n- The second date is the return departure date.\n- If the year is missing, use the current year (2026).\n- YEAR RULE:\n- If a date is found without a year (e.g. dd/mm), you MUST use the current year(2026).\n- Map date ranges to the departures schema:\n  - \"flight_departure_time\" = outbound date at 00:00:00Z\n  - \"return_flight_departure_time\" = return date at 00:00:00Z\n- Do NOT create custom fields like \"departure_date\" or \"return_date\".\n- Only use the exact schema fields.\n\nHOTELS:\n- You MUST extract the hotel names exactly from the text when they are explicitly mentioned.\n- Hotel names must be stored inside each step under:\n  \"custom_hotel_name\"\n- Do NOT use \"hotel_name\".\n- If the hotel is mentioned in free text and no database id is known:\n  - \"hotel_id\" = null\n  - \"custom_hotel_name\" = extracted hotel name\n- Keep the hotel name clean, but do not invent or replace it with another hotel.\n\nNIGHTS:\n- You MUST count nights, its days -1\n- Never convert days into nights.\n- \"duration_nights\" at step level must represent the number of nights spent in that city.\n- \"duration_nights\" at tour level must represent the total number of nights of the stay.\n- If the offer provides both a date range and explicit nights per hotel/step, prioritize the explicit nights written in the text for the steps.\n\n----------------------------------\n\nSTRICT CONSTRAINTS:\n\n- agency_id = 1\n- status = \"draft\"\n- NO hallucination\n- NO invented values\n- NO extra fields\n- MUST match EXACT schema\n\n----------------------------------\n\n\n\n\nSCHEMA TO FOLLOW EXACTLY:\n\n{\n  \"title\": null,\n  \"agency_id\": 1,\n  \"countries\": [],\n  \"duration_nights\": null,\n  \"airline\": null,\n  \"description\": null,\n  \"itinerary\": {},\n  \"status\": \"draft\",\n  \"photo_urls\": [],\n  \"is_global_pricing\": false,\n  \"global_pricing\": null,\n  \"lead_price\": null,\n  \"services\": {\n    \"included\": [],\n    \"excluded\": []\n  },\n  \"steps\": [],\n  \"departures\": []\n}"
             },
             {
               "name": "result_type",
@@ -493,7 +479,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2960,
+        3168,
         144
       ],
       "id": "2b51d0a5-1412-4c12-a021-a2c4b761ac25",
@@ -508,7 +494,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        3152,
+        3360,
         144
       ],
       "id": "c295a024-5fd5-41df-9f78-922e89c8951b",
@@ -519,7 +505,7 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2544,
+        2672,
         -80
       ],
       "id": "26df65f8-c10a-4e4a-be8f-9f265025cdcd",
@@ -530,7 +516,7 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2752,
+        2960,
         144
       ],
       "id": "3663e08b-4e14-491e-aed7-ec33417ce8e6",
@@ -564,7 +550,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        752,
+        736,
         144
       ],
       "id": "3b5b79ef-4a0a-4744-8847-0f76744692f0",
@@ -573,51 +559,12 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all();"
+        "jsCode": "const parseResult = $input.first().json;\nconst detectData = $('Detect Content & Generate JobId').first().json;\n\nconst jobId = detectData.jobId || 'unknown';\n\nfunction createEmptyTour() {\n  return {\n    title: null,\n    agency_id: 1,\n    countries: [],\n    duration_nights: null,\n    airline: null,\n    description: null,\n    itinerary: {},\n    status: 'draft',\n    photo_urls: [],\n    is_global_pricing: false,\n    global_pricing: null,\n    lead_price: null,\n    services: {\n      included: [],\n      excluded: []\n    },\n    steps: [],\n    departures: []\n  };\n}\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => typeof v === 'string' && v.trim() !== ''))];\n}\n\nfunction normalizeString(v) {\n  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;\n}\n\nfunction normalizeNumber(v) {\n  if (typeof v === 'number' && Number.isFinite(v)) return v;\n\n  if (typeof v === 'string') {\n    const cleaned = v\n      .trim()\n      .replace(/\\s+/g, '')\n      .replace(/,/g, '.')\n      .replace(/[^\\d.-]/g, '');\n\n    if (!cleaned || cleaned === '.' || cleaned === '-' || cleaned === '-.') return null;\n\n    const num = Number(cleaned);\n    return Number.isFinite(num) ? num : null;\n  }\n\n  return null;\n}\n\nfunction titleCaseCity(v) {\n  const s = normalizeString(v);\n  if (!s) return null;\n\n  return s\n    .toLowerCase()\n    .split(/\\s+/)\n    .map(word => word.charAt(0).toUpperCase() + word.slice(1))\n    .join(' ');\n}\n\nfunction emptyGlobalPricingObject() {\n  return {\n    dbl: null,\n    tpl: null,\n    sgl: null,\n    inf: null,\n    chd_2_6: null,\n    chd_5_11: null\n  };\n}\n\nfunction extractJsonString(raw) {\n  if (!raw || typeof raw !== 'string') return null;\n\n  let text = raw.trim();\n\n  text = text.replace(/^```json\\s*/i, '');\n  text = text.replace(/^```\\s*/i, '');\n  text = text.replace(/\\s*```$/i, '').trim();\n\n  if (text.startsWith('{') && text.endsWith('}')) {\n    return text;\n  }\n\n  const firstBrace = text.indexOf('{');\n  const lastBrace = text.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n    return text.slice(firstBrace, lastBrace + 1);\n  }\n\n  return null;\n}\n\nfunction extractTextCandidates(value) {\n  const results = [];\n\n  function walk(node) {\n    if (!node) return;\n\n    if (typeof node === 'string') {\n      results.push(node);\n      return;\n    }\n\n    if (Array.isArray(node)) {\n      for (const item of node) walk(item);\n      return;\n    }\n\n    if (typeof node === 'object') {\n      if (typeof node.text === 'string') results.push(node.text);\n\n      if (Array.isArray(node.parts)) {\n        for (const part of node.parts) {\n          if (typeof part?.text === 'string') results.push(part.text);\n        }\n      }\n\n      // walk common nested fields\n      if (node.content) walk(node.content);\n      if (node.output) walk(node.output);\n      if (node.response) walk(node.response);\n      if (node.message) walk(node.message);\n      if (node.md) walk(node.md);\n      if (node.markdown) walk(node.markdown);\n      if (node.pages) walk(node.pages);\n    }\n  }\n\n  walk(value);\n  return results.filter(Boolean);\n}\n\nfunction normalizeGlobalPricing(value, isGlobalPricing) {\n  if (!isGlobalPricing) return null;\n  if (value == null) return emptyGlobalPricingObject();\n\n  if (typeof value === 'number' || typeof value === 'string') {\n    const singlePrice = normalizeNumber(value);\n    if (singlePrice === null) return emptyGlobalPricingObject();\n\n    return {\n      dbl: singlePrice,\n      tpl: null,\n      sgl: null,\n      inf: null,\n      chd_2_6: null,\n      chd_5_11: null\n    };\n  }\n\n  if (typeof value !== 'object' || Array.isArray(value)) {\n    return emptyGlobalPricingObject();\n  }\n\n  return {\n    dbl: normalizeNumber(value.dbl ?? value.double),\n    tpl: normalizeNumber(value.tpl ?? value.triple),\n    sgl: normalizeNumber(value.sgl ?? value.single),\n    inf: normalizeNumber(value.inf ?? value.infant),\n    chd_2_6: normalizeNumber(value.chd_2_6 ?? value.child_2_6),\n    chd_5_11: normalizeNumber(value.chd_5_11 ?? value.child_5_11)\n  };\n}\n\nfunction normalizeHotelPricing(pricing) {\n  return {\n    single: normalizeNumber(pricing?.single ?? pricing?.sgl),\n    double: normalizeNumber(pricing?.double ?? pricing?.dbl),\n    triple: normalizeNumber(pricing?.triple ?? pricing?.tpl),\n    quadruple: normalizeNumber(pricing?.quadruple ?? pricing?.quad ?? pricing?.qdr)\n  };\n}\n\nfunction extractHotelMinPrice(hotel) {\n  if (!hotel || typeof hotel !== 'object') return null;\n\n  const p = hotel.pricing || {};\n\n  const candidates = [\n    normalizeNumber(p.quadruple),\n    normalizeNumber(p.quad),\n    normalizeNumber(p.qdr),\n    normalizeNumber(p.triple),\n    normalizeNumber(p.tpl),\n    normalizeNumber(p.double),\n    normalizeNumber(p.dbl),\n    normalizeNumber(p.single),\n    normalizeNumber(p.sgl),\n    normalizeNumber(hotel.quadruple),\n    normalizeNumber(hotel.quad),\n    normalizeNumber(hotel.tpl),\n    normalizeNumber(hotel.triple),\n    normalizeNumber(hotel.dbl),\n    normalizeNumber(hotel.double),\n    normalizeNumber(hotel.sgl),\n    normalizeNumber(hotel.single)\n  ].filter(v => v !== null);\n\n  return candidates.length ? Math.min(...candidates) : null;\n}\n\nfunction computeStepsDerivedLeadPrice(steps) {\n  if (!Array.isArray(steps) || steps.length === 0) return null;\n\n  let total = 0;\n\n  for (const step of steps) {\n    if (!step || !Array.isArray(step.hotels) || step.hotels.length === 0) {\n      return null;\n    }\n\n    const stepPrices = step.hotels\n      .map(h => extractHotelMinPrice(h))\n      .filter(v => v !== null);\n\n    if (stepPrices.length === 0) return null;\n\n    total += Math.min(...stepPrices);\n  }\n\n  return total;\n}\n\nfunction computeGlobalPricingLeadPrice(globalPricing) {\n  if (!globalPricing || typeof globalPricing !== 'object') return null;\n\n  const adultCandidates = [\n    normalizeNumber(globalPricing.tpl),\n    normalizeNumber(globalPricing.dbl),\n    normalizeNumber(globalPricing.sgl)\n  ].filter(v => v !== null);\n\n  return adultCandidates.length ? Math.min(...adultCandidates) : null;\n}\n\n// VERY IMPORTANT: collect text candidates robustly\nconst rawCandidates = extractTextCandidates(parseResult);\n\nlet parsed = null;\nlet usedRawCandidate = null;\n\nfor (const candidate of rawCandidates) {\n  const jsonString = extractJsonString(candidate);\n  if (!jsonString) continue;\n\n  try {\n    parsed = JSON.parse(jsonString);\n    usedRawCandidate = candidate;\n    break;\n  } catch (error) {\n    // continue\n  }\n}\n\nif (!parsed) {\n  return [{\n    json: {\n      extractionType: 'text',\n      _hasData: false,\n      source: 'text',\n      jobId,\n      debug_raw_candidates_count: rawCandidates.length,\n      debug_first_candidate: rawCandidates[0] || null,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nconst payload = createEmptyTour();\n\npayload.title = normalizeString(parsed.title);\npayload.agency_id = 1;\npayload.countries = uniqueStrings(Array.isArray(parsed.countries) ? parsed.countries : []);\npayload.duration_nights = normalizeNumber(parsed.duration_nights);\npayload.airline = normalizeString(parsed.airline);\npayload.description = normalizeString(parsed.description);\npayload.status = 'draft';\n\npayload.photo_urls = Array.isArray(parsed.photo_urls)\n  ? parsed.photo_urls.filter(v => typeof v === 'string' && v.trim() !== '')\n  : [];\n\npayload.is_global_pricing = parsed.is_global_pricing === true;\npayload.global_pricing = normalizeGlobalPricing(parsed.global_pricing, payload.is_global_pricing);\npayload.lead_price = normalizeNumber(parsed.lead_price);\n\npayload.services = {\n  included: uniqueStrings(parsed?.services?.included),\n  excluded: uniqueStrings(parsed?.services?.excluded)\n};\n\nif (parsed.itinerary && typeof parsed.itinerary === 'object' && !Array.isArray(parsed.itinerary)) {\n  const keys = Object.keys(parsed.itinerary);\n  const alreadyDayFormat = keys.every(k => /^day_\\d+$/i.test(k));\n\n  if (alreadyDayFormat) {\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[key] = value.trim();\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  } else {\n    let i = 1;\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[`day_${i}`] = value.trim();\n        i++;\n      } else if (value && typeof value === 'object') {\n        const parts = [];\n        if (key) parts.push(titleCaseCity(key));\n        if (value.hotel) parts.push(`hôtel: ${value.hotel}`);\n        if (value.nights) parts.push(`${value.nights} nuits`);\n        if (parts.length > 0) {\n          normalizedItinerary[`day_${i}`] = parts.join(', ');\n          i++;\n        }\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  }\n}\n\nif (Array.isArray(parsed.steps) && parsed.steps.length > 0) {\n  payload.steps = parsed.steps\n    .map((step, index) => ({\n      city: titleCaseCity(step.city),\n      step_order: typeof step.step_order === 'number' ? step.step_order : index + 1,\n      duration_nights: normalizeNumber(step.duration_nights),\n      hotels: Array.isArray(step.hotels)\n        ? step.hotels.map(h => ({\n            hotel_id: h.hotel_id ?? null,\n            custom_hotel_name: normalizeString(h.custom_hotel_name ?? h.hotel_name ?? h.name),\n            is_default: h.is_default === true,\n            pricing: normalizeHotelPricing(h.pricing)\n          }))\n        : []\n    }))\n    .filter(step => step.city !== null || step.hotels.length > 0);\n}\n\npayload.steps = payload.steps\n  .sort((a, b) => (a.step_order ?? 9999) - (b.step_order ?? 9999))\n  .map((step, index) => ({\n    ...step,\n    step_order: index + 1\n  }));\n\nconst stepDurationValues = payload.steps\n  .map(step => normalizeNumber(step.duration_nights))\n  .filter(v => v !== null);\n\nif (payload.steps.length > 0 && stepDurationValues.length === payload.steps.length) {\n  payload.duration_nights = stepDurationValues.reduce((sum, v) => sum + v, 0);\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => {\n      const explicitDepartureCity = normalizeString(dep.departure_city);\n      const stock = normalizeNumber(dep.stock);\n      const flightDepartureTime = normalizeString(dep.flight_departure_time);\n      const flightArrivalTime = normalizeString(dep.flight_arrival_time);\n      const returnFlightDepartureTime = normalizeString(dep.return_flight_departure_time);\n      const returnFlightArrivalTime = normalizeString(dep.return_flight_arrival_time);\n\n      const hasMeaningfulData =\n        explicitDepartureCity !== null ||\n        stock !== null ||\n        flightDepartureTime !== null ||\n        flightArrivalTime !== null ||\n        returnFlightDepartureTime !== null ||\n        returnFlightArrivalTime !== null;\n\n      if (!hasMeaningfulData) return null;\n\n      return {\n        departure_city: explicitDepartureCity || 'Alger',\n        stock,\n        flight_departure_time: flightDepartureTime,\n        flight_arrival_time: flightArrivalTime,\n        return_flight_departure_time: returnFlightDepartureTime,\n        return_flight_arrival_time: returnFlightArrivalTime\n      };\n    })\n    .filter(Boolean);\n}\n\nif (!payload.is_global_pricing) {\n  payload.global_pricing = null;\n} else {\n  payload.global_pricing = payload.global_pricing || emptyGlobalPricingObject();\n}\n\nconst explicitLeadPrice = normalizeNumber(parsed.lead_price);\nconst globalPricingLeadPrice = computeGlobalPricingLeadPrice(payload.global_pricing);\nconst stepsDerivedLeadPrice = computeStepsDerivedLeadPrice(parsed.steps);\n\nconst leadPriceCandidates = [\n  explicitLeadPrice,\n  globalPricingLeadPrice,\n  stepsDerivedLeadPrice\n].filter(v => v !== null);\n\npayload.lead_price = leadPriceCandidates.length > 0\n  ? Math.min(...leadPriceCandidates)\n  : null;\n\nreturn [{\n  json: {\n    extractionType: 'text',\n    _hasData: true,\n    source: 'text',\n    jobId,\n    debug_used_candidate_preview: usedRawCandidate ? usedRawCandidate.slice(0, 300) : null,\n    payload\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        544,
-        -80
-      ],
-      "id": "d12f46a7-afca-4af3-ad32-b51795c61f7f",
-      "name": "Fork text"
-    },
-    {
-      "parameters": {
-        "jsCode": "return $input.all();"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        528,
-        144
-      ],
-      "id": "0f61c4b3-e71c-4696-bcdd-f52c68dbbea0",
-      "name": "Fork image"
-    },
-    {
-      "parameters": {
-        "jsCode": "return $input.all();"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        528,
-        432
-      ],
-      "id": "192afbab-d59a-444e-8f94-dd5fc21a3cb9",
-      "name": "Fork pdf"
-    },
-    {
-      "parameters": {
-        "jsCode": "const llmResponse = $input.first().json;\nconst detectData = $('Detect Content & Generate JobId').first().json;\n\nconst jobId = detectData.jobId || 'unknown';\n\nfunction createEmptyTour() {\n  return {\n    title: null,\n    agency_id: 1,\n    countries: [],\n    duration_nights: null,\n    airline: null,\n    description: null,\n    itinerary: {},\n    status: 'draft',\n    photo_urls: [],\n    is_global_pricing: false,\n    global_pricing: null,\n    lead_price: null,\n    services: {\n      included: [],\n      excluded: []\n    },\n    steps: [],\n    departures: []\n  };\n}\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => typeof v === 'string' && v.trim() !== ''))];\n}\n\nfunction normalizeString(v) {\n  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;\n}\n\nfunction normalizeNumber(v) {\n  return typeof v === 'number' && Number.isFinite(v) ? v : null;\n}\n\nfunction titleCaseCity(v) {\n  const s = normalizeString(v);\n  if (!s) return null;\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nlet rawText =\n  llmResponse?.content?.parts?.[0]?.text ||\n  llmResponse?.text ||\n  llmResponse?.output ||\n  llmResponse?.message ||\n  '';\n\nif (!rawText || typeof rawText !== 'string') {\n  return [{\n    json: {\n      extractionType: 'text',\n      _hasData: false,\n      source: 'text',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nrawText = rawText.trim();\nrawText = rawText.replace(/^```json\\s*/i, '');\nrawText = rawText.replace(/^```\\s*/i, '');\nrawText = rawText.replace(/\\s*```$/i, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(rawText);\n} catch (error) {\n  return [{\n    json: {\n      extractionType: 'text',\n      _hasData: false,\n      source: 'text',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nconst payload = createEmptyTour();\n\npayload.title = normalizeString(parsed.title);\npayload.agency_id = 1;\npayload.countries = uniqueStrings(Array.isArray(parsed.countries) ? parsed.countries : []);\npayload.duration_nights = normalizeNumber(parsed.duration_nights);\npayload.airline = normalizeString(parsed.airline);\npayload.description = normalizeString(parsed.description);\npayload.status = ['draft', 'pending_approval', 'published', 'rejected'].includes(parsed.status)\n  ? parsed.status\n  : 'draft';\npayload.photo_urls = Array.isArray(parsed.photo_urls)\n  ? parsed.photo_urls.filter(v => typeof v === 'string' && v.trim() !== '')\n  : [];\npayload.is_global_pricing = parsed.is_global_pricing === true;\npayload.global_pricing = parsed.global_pricing ?? null;\npayload.lead_price = normalizeNumber(parsed.lead_price);\n\npayload.services = {\n  included: uniqueStrings(parsed?.services?.included),\n  excluded: uniqueStrings(parsed?.services?.excluded)\n};\n\nif (parsed.itinerary && typeof parsed.itinerary === 'object' && !Array.isArray(parsed.itinerary)) {\n  const keys = Object.keys(parsed.itinerary);\n  const alreadyDayFormat = keys.every(k => /^day_\\d+$/i.test(k));\n\n  if (alreadyDayFormat) {\n    payload.itinerary = parsed.itinerary;\n  } else {\n    let i = 1;\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[`day_${i}`] = value.trim();\n        i++;\n      } else if (value && typeof value === 'object') {\n        const parts = [];\n        if (key) parts.push(titleCaseCity(key));\n        if (value.hotel) parts.push(`hôtel: ${value.hotel}`);\n        if (value.nights) parts.push(`${value.nights} nuits`);\n        if (parts.length > 0) {\n          normalizedItinerary[`day_${i}`] = parts.join(', ');\n          i++;\n        }\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  }\n}\n\nif (Array.isArray(parsed.steps) && parsed.steps.length > 0) {\n  payload.steps = parsed.steps.map((step, index) => ({\n    city: titleCaseCity(step.city),\n    step_order: typeof step.step_order === 'number' ? step.step_order : index + 1,\n    duration_nights: normalizeNumber(step.duration_nights),\n    hotels: Array.isArray(step.hotels)\n      ? step.hotels.map(h => ({\n          hotel_id: h.hotel_id ?? null,\n          custom_hotel_name: normalizeString(h.custom_hotel_name),\n          is_default: h.is_default === true,\n          pricing: {\n            single: normalizeNumber(h?.pricing?.single),\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'text',\n    _hasData: true,\n    source: 'text',\n    jobId,\n    payload\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1824,
+        2384,
         -96
       ],
       "id": "556e04f7-592e-4141-a855-af38da222024",
@@ -625,7 +572,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const llmResponse = $input.first().json;\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'pdf',\n    _hasData: true,\n    source: 'pdf',\n    jobId,\n    payload\n  }\n}];"
+        "jsCode": "const parseResult = $input.first().json;\nconst detectData = $('Detect Content & Generate JobId').first().json;\n\nconst jobId = detectData.jobId || 'unknown';\n\nfunction createEmptyTour() {\n  return {\n    title: null,\n    agency_id: 1,\n    countries: [],\n    duration_nights: null,\n    airline: null,\n    description: null,\n    itinerary: {},\n    status: 'draft',\n    photo_urls: [],\n    is_global_pricing: false,\n    global_pricing: null,\n    lead_price: null,\n    services: {\n      included: [],\n      excluded: []\n    },\n    steps: [],\n    departures: []\n  };\n}\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => typeof v === 'string' && v.trim() !== ''))];\n}\n\nfunction normalizeString(v) {\n  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;\n}\n\nfunction normalizeNumber(v) {\n  if (typeof v === 'number' && Number.isFinite(v)) return v;\n  if (typeof v === 'string') {\n    const cleaned = v.replace(/[^\\d.,-]/g, '').replace(',', '.');\n    const parsed = Number(cleaned);\n    return Number.isFinite(parsed) ? parsed : null;\n  }\n  return null;\n}\n\nfunction titleCaseCity(v) {\n  const s = normalizeString(v);\n  if (!s) return null;\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nfunction extractJsonString(raw) {\n  if (!raw || typeof raw !== 'string') return null;\n\n  let text = raw.trim();\n\n  text = text.replace(/^```json\\s*/i, '');\n  text = text.replace(/^```\\s*/i, '');\n  text = text.replace(/\\s*```$/i, '').trim();\n\n  if (text.startsWith('{') && text.endsWith('}')) {\n    return text;\n  }\n\n  const firstBrace = text.indexOf('{');\n  const lastBrace = text.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n    return text.slice(firstBrace, lastBrace + 1);\n  }\n\n  return null;\n}\n\nfunction parseIsoDate(value) {\n  if (!value || typeof value !== 'string') return null;\n  const d = new Date(value);\n  return Number.isNaN(d.getTime()) ? null : d;\n}\n\nfunction diffNights(start, end) {\n  const startDate = parseIsoDate(start);\n  const endDate = parseIsoDate(end);\n  if (!startDate || !endDate) return null;\n\n  const msPerDay = 1000 * 60 * 60 * 24;\n  const utcStart = Date.UTC(\n    startDate.getUTCFullYear(),\n    startDate.getUTCMonth(),\n    startDate.getUTCDate()\n  );\n  const utcEnd = Date.UTC(\n    endDate.getUTCFullYear(),\n    endDate.getUTCMonth(),\n    endDate.getUTCDate()\n  );\n\n  const diff = Math.round((utcEnd - utcStart) / msPerDay);\n  return diff >= 0 ? diff : null;\n}\n\n// Llama Parse can return markdown/text/pages\nconst rawCandidates = [\n  parseResult?.md,\n  parseResult?.markdown,\n  parseResult?.text,\n  ...(Array.isArray(parseResult?.pages)\n    ? parseResult.pages.flatMap(p => [p?.md, p?.markdown, p?.text].filter(Boolean))\n    : [])\n].filter(Boolean);\n\nlet parsed = null;\n\nfor (const candidate of rawCandidates) {\n  const jsonString = extractJsonString(candidate);\n  if (!jsonString) continue;\n\n  try {\n    parsed = JSON.parse(jsonString);\n    break;\n  } catch (error) {\n    // continue\n  }\n}\n\nif (!parsed) {\n  return [{\n    json: {\n      extractionType: 'pdf',\n      _hasData: false,\n      source: 'pdf',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nconst payload = createEmptyTour();\n\npayload.title = normalizeString(parsed.title);\npayload.agency_id = 1;\npayload.countries = uniqueStrings(Array.isArray(parsed.countries) ? parsed.countries : []);\npayload.duration_nights = normalizeNumber(parsed.duration_nights);\npayload.airline = normalizeString(parsed.airline);\npayload.description = normalizeString(parsed.description);\npayload.status = ['draft', 'pending_approval', 'published', 'rejected'].includes(parsed.status)\n  ? parsed.status\n  : 'draft';\npayload.photo_urls = Array.isArray(parsed.photo_urls)\n  ? parsed.photo_urls.filter(v => typeof v === 'string' && v.trim() !== '')\n  : [];\npayload.is_global_pricing = parsed.is_global_pricing === true;\npayload.global_pricing = normalizeNumber(parsed.global_pricing);\npayload.lead_price = normalizeNumber(parsed.lead_price);\n\npayload.services = {\n  included: uniqueStrings(parsed?.services?.included),\n  excluded: uniqueStrings(parsed?.services?.excluded)\n};\n\n// itinerary independent from steps\nif (parsed.itinerary && typeof parsed.itinerary === 'object' && !Array.isArray(parsed.itinerary)) {\n  const keys = Object.keys(parsed.itinerary);\n  const alreadyDayFormat = keys.every(k => /^day_\\d+$/i.test(k));\n\n  if (alreadyDayFormat) {\n    payload.itinerary = parsed.itinerary;\n  } else {\n    let i = 1;\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[`day_${i}`] = value.trim();\n        i++;\n      } else if (value && typeof value === 'object') {\n        const parts = [];\n        if (key) parts.push(titleCaseCity(key));\n        if (value.hotel) parts.push(`hôtel: ${value.hotel}`);\n        if (value.nights) parts.push(`${value.nights} nuits`);\n        if (parts.length > 0) {\n          normalizedItinerary[`day_${i}`] = parts.join(', ');\n          i++;\n        }\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  }\n}\n\nif (Array.isArray(parsed.steps) && parsed.steps.length > 0) {\n  payload.steps = parsed.steps.map((step, index) => ({\n    city: titleCaseCity(step.city),\n    step_order: typeof step.step_order === 'number' ? step.step_order : index + 1,\n    duration_nights: normalizeNumber(step.duration_nights),\n    hotels: Array.isArray(step.hotels)\n      ? step.hotels.map(h => ({\n          hotel_id: h.hotel_id ?? null,\n          custom_hotel_name: normalizeString(h.custom_hotel_name),\n          is_default: h.is_default === true,\n          pricing: {\n            single: normalizeNumber(h?.pricing?.single),\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\n// Normalize prices\nif (payload.lead_price == null && typeof payload.global_pricing === 'number') {\n  payload.lead_price = payload.global_pricing;\n}\n\n// Recompute total duration from step durations if available\nconst stepDurations = Array.isArray(payload.steps)\n  ? payload.steps\n      .map(step => step?.duration_nights)\n      .filter(v => typeof v === 'number' && Number.isFinite(v))\n  : [];\n\nconst stepDurationSum =\n  stepDurations.length > 0\n    ? stepDurations.reduce((acc, v) => acc + v, 0)\n    : null;\n\n// Infer from dates if useful\nlet inferredFromDates = null;\nif (Array.isArray(payload.departures) && payload.departures.length > 0) {\n  const dep = payload.departures[0];\n  inferredFromDates = diffNights(\n    dep?.flight_departure_time,\n    dep?.return_flight_departure_time\n  );\n}\n\n// Priority: step-level > explicit > date-range\nif (stepDurationSum !== null) {\n  payload.duration_nights = stepDurationSum;\n} else if (\n  !(typeof payload.duration_nights === 'number' && Number.isFinite(payload.duration_nights)) &&\n  inferredFromDates !== null\n) {\n  payload.duration_nights = inferredFromDates;\n}\n\n// If two steps exist and total duration is known, enforce consistency\nif (\n  Array.isArray(payload.steps) &&\n  payload.steps.length === 2 &&\n  typeof payload.duration_nights === 'number' &&\n  Number.isFinite(payload.duration_nights)\n) {\n  const validSteps = payload.steps.filter(\n    s => typeof s.duration_nights === 'number' && Number.isFinite(s.duration_nights)\n  );\n\n  if (validSteps.length === 2) {\n    const currentSum = validSteps[0].duration_nights + validSteps[1].duration_nights;\n\n    if (currentSum !== payload.duration_nights) {\n      const first = validSteps[0].duration_nights;\n      const secondRecomputed = payload.duration_nights - first;\n\n      if (secondRecomputed >= 0) {\n        validSteps[1].duration_nights = secondRecomputed;\n      }\n    }\n  }\n}\n\nreturn [{\n  json: {\n    extractionType: 'pdf',\n    _hasData: true,\n    source: 'pdf',\n    jobId,\n    payload\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -638,7 +585,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const llmResponse = $input.first().json;\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'image',\n    _hasData: true,\n    source: 'image',\n    jobId,\n    payload\n  }\n}];"
+        "jsCode": "const parseResult = $input.first().json;\nconst detectData = $('Detect Content & Generate JobId').first().json;\n\nconst jobId = detectData.jobId || 'unknown';\n\nfunction createEmptyTour() {\n  return {\n    title: null,\n    agency_id: 1,\n    countries: [],\n    duration_nights: null,\n    airline: null,\n    description: null,\n    itinerary: {},\n    status: 'draft',\n    photo_urls: [],\n    is_global_pricing: false,\n    global_pricing: null,\n    lead_price: null,\n    services: {\n      included: [],\n      excluded: []\n    },\n    steps: [],\n    departures: []\n  };\n}\n\nfunction uniqueStrings(arr) {\n  return [...new Set((arr || []).filter(v => typeof v === 'string' && v.trim() !== ''))];\n}\n\nfunction normalizeString(v) {\n  return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;\n}\n\nfunction normalizeNumber(v) {\n  return typeof v === 'number' && Number.isFinite(v) ? v : null;\n}\n\nfunction titleCaseCity(v) {\n  const s = normalizeString(v);\n  if (!s) return null;\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nfunction extractJsonString(raw) {\n  if (!raw || typeof raw !== 'string') return null;\n\n  let text = raw.trim();\n\n  text = text.replace(/^```json\\s*/i, '');\n  text = text.replace(/^```\\s*/i, '');\n  text = text.replace(/\\s*```$/i, '').trim();\n\n  // If raw is already JSON\n  if (text.startsWith('{') && text.endsWith('}')) {\n    return text;\n  }\n\n  // Try to find first JSON object in text\n  const firstBrace = text.indexOf('{');\n  const lastBrace = text.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n    return text.slice(firstBrace, lastBrace + 1);\n  }\n\n  return null;\n}\n\n// Llama Parse can return markdown/text/pages\nconst rawCandidates = [\n  parseResult?.md,\n  parseResult?.markdown,\n  parseResult?.text,\n  parseResult?.pages?.[0]?.md,\n  parseResult?.pages?.[0]?.markdown,\n  parseResult?.pages?.[0]?.text\n].filter(Boolean);\n\nlet parsed = null;\n\nfor (const candidate of rawCandidates) {\n  const jsonString = extractJsonString(candidate);\n  if (!jsonString) continue;\n\n  try {\n    parsed = JSON.parse(jsonString);\n    break;\n  } catch (error) {\n    // continue trying next candidate\n  }\n}\n\nif (!parsed) {\n  return [{\n    json: {\n      extractionType: 'image',\n      _hasData: false,\n      source: 'image',\n      jobId,\n      payload: createEmptyTour()\n    }\n  }];\n}\n\nconst payload = createEmptyTour();\n\npayload.title = normalizeString(parsed.title);\npayload.agency_id = 1;\npayload.countries = uniqueStrings(Array.isArray(parsed.countries) ? parsed.countries : []);\npayload.duration_nights = normalizeNumber(parsed.duration_nights);\npayload.airline = normalizeString(parsed.airline);\npayload.description = normalizeString(parsed.description);\npayload.status = ['draft', 'pending_approval', 'published', 'rejected'].includes(parsed.status)\n  ? parsed.status\n  : 'draft';\npayload.photo_urls = Array.isArray(parsed.photo_urls)\n  ? parsed.photo_urls.filter(v => typeof v === 'string' && v.trim() !== '')\n  : [];\npayload.is_global_pricing = parsed.is_global_pricing === true;\npayload.global_pricing = parsed.global_pricing ?? null;\npayload.lead_price = normalizeNumber(parsed.lead_price);\n\npayload.services = {\n  included: uniqueStrings(parsed?.services?.included),\n  excluded: uniqueStrings(parsed?.services?.excluded)\n};\n\n// itinerary must remain independent from steps\nif (parsed.itinerary && typeof parsed.itinerary === 'object' && !Array.isArray(parsed.itinerary)) {\n  const keys = Object.keys(parsed.itinerary);\n  const alreadyDayFormat = keys.every(k => /^day_\\d+$/i.test(k));\n\n  if (alreadyDayFormat) {\n    payload.itinerary = parsed.itinerary;\n  } else {\n    let i = 1;\n    const normalizedItinerary = {};\n    for (const [key, value] of Object.entries(parsed.itinerary)) {\n      if (typeof value === 'string' && value.trim() !== '') {\n        normalizedItinerary[`day_${i}`] = value.trim();\n        i++;\n      } else if (value && typeof value === 'object') {\n        const parts = [];\n        if (key) parts.push(titleCaseCity(key));\n        if (value.hotel) parts.push(`hôtel: ${value.hotel}`);\n        if (value.nights) parts.push(`${value.nights} nuits`);\n        if (parts.length > 0) {\n          normalizedItinerary[`day_${i}`] = parts.join(', ');\n          i++;\n        }\n      }\n    }\n    payload.itinerary = normalizedItinerary;\n  }\n}\n\nif (Array.isArray(parsed.steps) && parsed.steps.length > 0) {\n  payload.steps = parsed.steps.map((step, index) => ({\n    city: titleCaseCity(step.city),\n    step_order: typeof step.step_order === 'number' ? step.step_order : index + 1,\n    duration_nights: normalizeNumber(step.duration_nights),\n    hotels: Array.isArray(step.hotels)\n      ? step.hotels.map(h => ({\n          hotel_id: h.hotel_id ?? null,\n          custom_hotel_name: normalizeString(h.custom_hotel_name),\n          is_default: h.is_default === true,\n          pricing: {\n            single: normalizeNumber(h?.pricing?.single),\n            double: normalizeNumber(h?.pricing?.double),\n            triple: normalizeNumber(h?.pricing?.triple)\n          }\n        }))\n      : []\n  }));\n}\n\nif (Array.isArray(parsed.departures)) {\n  payload.departures = parsed.departures\n    .map(dep => ({\n      departure_city: normalizeString(dep.departure_city),\n      stock: normalizeNumber(dep.stock),\n      flight_departure_time: normalizeString(dep.flight_departure_time),\n      flight_arrival_time: normalizeString(dep.flight_arrival_time),\n      return_flight_departure_time: normalizeString(dep.return_flight_departure_time),\n      return_flight_arrival_time: normalizeString(dep.return_flight_arrival_time)\n    }))\n    .filter(dep =>\n      dep.departure_city !== null ||\n      dep.stock !== null ||\n      dep.flight_departure_time !== null ||\n      dep.flight_arrival_time !== null ||\n      dep.return_flight_departure_time !== null ||\n      dep.return_flight_arrival_time !== null\n    );\n}\n\nreturn [{\n  json: {\n    extractionType: 'image',\n    _hasData: true,\n    source: 'image',\n    jobId,\n    payload\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -648,6 +595,100 @@
       ],
       "id": "84ab9f6a-5ce7-4c2c-a020-71f8505d3e2f",
       "name": "Format Image Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw =\n  $json.text ||\n  $json.message ||\n  $json.body ||\n  $json.caption ||\n  $json.conversation ||\n  '';\n\nconst text = String(raw).toLowerCase().trim();\n\n// Nettoyage simple\nconst normalized = text\n  .replace(/\\n/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .replace(/[^\\p{L}\\p{N}\\s€$.,:/-]/gu, ' ')\n  .trim();\n\n// Indices positifs d’une offre voyage\nconst positiveKeywords = [\n  'prix', 'tarif', 'promo', 'promotion', 'offre', 'voyage', 'séjour',\n  'depart', 'départ', 'retour', 'hotel', 'hôtel', 'vol', 'circuit',\n  'package', 'destination', 'nuits', 'jours', 'agence', 'programme',\n  'itineraire', 'itinéraire', 'reservation', 'réservation', 'disponible',\n  'disponibilité', 'place', 'stock'\n];\n\n// Indices négatifs = bruit\nconst negativeKeywords = [\n  'bonjour', 'bonsoir', 'salut', 'cv', 'ça va', 'ca va', 'merci',\n  'ok', 'daccord', 'd\\'accord', 'oui', 'non', 'inchallah',\n  'appel moi', 'appelle moi', 'tu peux', 'je veux', 'je voudrais',\n  'rappelle', 'video', 'vidéo', 'audio', 'sticker'\n];\n\n// Comptage\nconst positiveMatches = positiveKeywords.filter(k => normalized.includes(k));\nconst negativeMatches = negativeKeywords.filter(k => normalized.includes(k));\n\n// Regex utiles\nconst hasPrice = /(\\d{2,6}\\s?(da|dzd|eur|€|\\$))/i.test(normalized);\nconst hasDate = /\\b(\\d{1,2}[\\/\\-]\\d{1,2}([\\/\\-]\\d{2,4})?)\\b/i.test(normalized);\nconst hasNights = /\\b\\d+\\s?(nuit|nuits|jour|jours)\\b/i.test(normalized);\nconst hasDestination = /\\b(bali|dubai|dubaï|istanbul|antalya|baku|gabala|egypte|égypte|turquie|france|espagne|italie|rome|capri|amalfi)\\b/i.test(normalized);\n\n// Score\nlet score = 0;\nscore += positiveMatches.length * 2;\nscore -= negativeMatches.length * 2;\nif (hasPrice) score += 3;\nif (hasDate) score += 2;\nif (hasNights) score += 2;\nif (hasDestination) score += 2;\n\n// Conditions minimales\nconst enoughContent = normalized.length >= 40;\nconst isValidOffer =\n  enoughContent &&\n  (\n    hasPrice ||\n    (positiveMatches.length >= 3 && (hasDate || hasNights || hasDestination))\n  ) &&\n  score >= 4;\n\nreturn [\n  {\n    json: {\n      ...$json,\n      raw_text: raw,\n      normalized_text: normalized,\n      offer_score: score,\n      positive_matches: positiveMatches,\n      negative_matches: negativeMatches,\n      has_price: hasPrice,\n      has_date: hasDate,\n      has_nights: hasNights,\n      has_destination: hasDestination,\n      is_valid_offer: isValidOffer\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -80
+      ],
+      "id": "cbd5abb1-2351-4655-9046-33602ca4857d",
+      "name": "Detect Noise Text"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1b4038be-d1fb-4191-8048-9532f98d1aea",
+              "leftValue": "={{$json.is_valid_offer}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        -80
+      ],
+      "id": "e39e6d5b-ff8e-451d-b3ce-337df93fc6e0",
+      "name": "IF Valid Text Offer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $json;\n\n// Très important : gérer aussi originalPayload\nconst payload =\n  root.originalPayload ||\n  root;\n\nconst msg =\n  payload.body?.data?.message ||\n  payload.body?.data?.messages?.[0]?.message ||\n  payload.data?.message ||\n  payload.message ||\n  {};\n\n// Détection image / pdf\nconst isImage =\n  !!msg.imageMessage ||\n  payload.mimetype?.startsWith?.('image/') === true ||\n  payload.mimeType?.startsWith?.('image/') === true;\n\nconst isPdf =\n  (\n    !!msg.documentMessage &&\n    (\n      msg.documentMessage.mimetype === 'application/pdf' ||\n      (msg.documentMessage.fileName || '').toLowerCase().endsWith('.pdf')\n    )\n  ) ||\n  payload.mimetype === 'application/pdf' ||\n  payload.mimeType === 'application/pdf';\n\n// Texte / caption\nconst raw =\n  msg.conversation ||\n  msg.extendedTextMessage?.text ||\n  msg.imageMessage?.caption ||\n  msg.documentMessage?.caption ||\n  payload.text ||\n  (typeof payload.message === 'string' ? payload.message : '') ||\n  '';\n\nconst hasText = String(raw).trim().length > 0;\n\n// 1) Image seule => passe\nif (isImage && !hasText) {\n  return [\n    {\n      json: {\n        ...$json,\n        _debug_isImage: isImage,\n        _debug_isPdf: isPdf,\n        _debug_raw: raw,\n        is_valid_offer: true,\n        classification: 'valid_image_offer'\n      }\n    }\n  ];\n}\n\n// 2) PDF seul => passe\nif (isPdf && !hasText) {\n  return [\n    {\n      json: {\n        ...$json,\n        _debug_isImage: isImage,\n        _debug_isPdf: isPdf,\n        _debug_raw: raw,\n        is_valid_offer: true,\n        classification: 'valid_pdf_offer'\n      }\n    }\n  ];\n}\n\n// 3) Texte seul OU media + texte => filtrage\nconst normalized = String(raw)\n  .toLowerCase()\n  .replace(/\\n/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .replace(/[^\\p{L}\\p{N}\\s€$.,:/+\\-]/gu, ' ')\n  .trim();\n\nconst travelKeywords = [\n  'prix', 'tarif', 'promo', 'promotion', 'offre', 'voyage', 'séjour',\n  'depart', 'départ', 'retour', 'hotel', 'hôtel', 'vol', 'circuit',\n  'package', 'destination', 'nuits', 'jours', 'agence', 'programme',\n  'itineraire', 'itinéraire', 'reservation', 'réservation', 'disponible',\n  'disponibilité', 'place', 'stock', 'excursion', 'pension', 'transfert'\n];\n\nconst noiseKeywords = [\n  'bonjour', 'bonsoir', 'salut', 'cv', 'ça va', 'ca va', 'merci',\n  'ok', 'oui', 'non', 'inchallah', 'appel moi', 'appelle moi',\n  'tu peux', 'je veux', 'je voudrais', 'rappelle', 'audio', 'sticker'\n];\n\nconst excludedVisaKeywords = [\n  'visa', 'visas', 'demande de visa', 'rdv visa', 'rendez-vous visa',\n  'procédure visa', 'schengen', 'tlscontact', 'vfs', 'consulat',\n  'ambassade', 'dossier visa', 'chine'\n];\n\nconst travelMatches = travelKeywords.filter(k => normalized.includes(k));\nconst noiseMatches = noiseKeywords.filter(k => normalized.includes(k));\nconst visaMatches = excludedVisaKeywords.filter(k => normalized.includes(k));\n\nconst hasPrice = /(\\d{2,6}\\s?(da|dzd|eur|€|\\$))/i.test(normalized);\nconst hasDate = /\\b(\\d{1,2}[\\/\\-]\\d{1,2}([\\/\\-]\\d{2,4})?)\\b/i.test(normalized);\nconst hasNights = /\\b\\d+\\s?(nuit|nuits|jour|jours)\\b/i.test(normalized);\nconst hasTravelDestination = /\\b(bali|dubai|dubaï|istanbul|antalya|baku|gabala|egypte|égypte|turquie|france|espagne|italie|rome|capri|amalfi|maldives|tunisie|maroc)\\b/i.test(normalized);\n\nconst isVisaOffer =\n  visaMatches.length > 0 ||\n  (\n    normalized.includes('visa') &&\n    (\n      normalized.includes('procédure') ||\n      normalized.includes('demande') ||\n      normalized.includes('rdv') ||\n      normalized.includes('rendez-vous') ||\n      normalized.includes('consulat') ||\n      normalized.includes('ambassade')\n    )\n  );\n\nlet score = 0;\nscore += travelMatches.length * 2;\nscore -= noiseMatches.length * 2;\nif (hasPrice) score += 3;\nif (hasDate) score += 2;\nif (hasNights) score += 2;\nif (hasTravelDestination) score += 2;\n\nconst enoughContent = normalized.length >= 20;\n\nconst isTravelOffer =\n  enoughContent &&\n  !isVisaOffer &&\n  (\n    hasPrice ||\n    (travelMatches.length >= 2 && (hasDate || hasNights || hasTravelDestination))\n  ) &&\n  score >= 4;\n\nlet classification = 'noise';\n\nif (isVisaOffer) {\n  classification = 'excluded_visa_offer';\n} else if (isImage && isTravelOffer) {\n  classification = 'valid_image_offer';\n} else if (isPdf && isTravelOffer) {\n  classification = 'valid_pdf_offer';\n} else if (!isImage && !isPdf && isTravelOffer) {\n  classification = 'valid_travel_offer';\n}\n\nreturn [\n  {\n    json: {\n      ...$json,\n      _debug_isImage: isImage,\n      _debug_isPdf: isPdf,\n      _debug_raw: raw,\n      normalized_text: normalized,\n      offer_score: score,\n      is_valid_offer: ['valid_travel_offer', 'valid_image_offer', 'valid_pdf_offer'].includes(classification),\n      classification\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        160
+      ],
+      "id": "a7e59b90-6524-4d4c-a349-b205fd7f3b9f",
+      "name": "Detect Noise"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1b4038be-d1fb-4191-8048-9532f98d1aea",
+              "leftValue": "={{ ['valid_travel_offer', 'valid_image_offer', 'valid_pdf_offer'].includes($json.classification) }}",
+              "rightValue": "valid_travel_offer",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        320,
+        160
+      ],
+      "id": "cff37a3d-c543-4fed-9927-8a1c7913269f",
+      "name": "IF Valid Offer"
     }
   ],
   "pinData": {},
@@ -775,17 +816,7 @@
       "main": [
         [
           {
-            "node": "Fork text",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fork image",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fork pdf",
+            "node": "Detect Noise",
             "type": "main",
             "index": 0
           }
@@ -796,7 +827,7 @@
       "main": [
         [
           {
-            "node": "Edit Fields",
+            "node": "Detect Noise Text",
             "type": "main",
             "index": 0
           }
@@ -905,39 +936,6 @@
         []
       ]
     },
-    "Fork text": {
-      "main": [
-        [
-          {
-            "node": "if texte",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fork image": {
-      "main": [
-        [
-          {
-            "node": "if image",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fork pdf": {
-      "main": [
-        [
-          {
-            "node": "if pdf",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Format Text Result": {
       "main": [
         [
@@ -970,6 +968,60 @@
           }
         ]
       ]
+    },
+    "Detect Noise Text": {
+      "main": [
+        [
+          {
+            "node": "IF Valid Text Offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Valid Text Offer": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Noise": {
+      "main": [
+        [
+          {
+            "node": "IF Valid Offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Valid Offer": {
+      "main": [
+        [
+          {
+            "node": "if texte",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if image",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "if pdf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -977,7 +1029,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "c155ece1-7e36-496e-8187-ab7aee05bda7",
+  "versionId": "3c849dde-29d6-4bde-b239-e9787df37ac0",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7514434f071a5c810a8c2c99ac94d34a4e7680e3c3fbddb41b4465f5d2957939"
