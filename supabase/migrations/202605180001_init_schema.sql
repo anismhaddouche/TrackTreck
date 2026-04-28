@@ -10,9 +10,6 @@ begin
     create type public.user_role as enum ('client', 'admin', 'agent');
   end if;
 
-  if not exists (select 1 from pg_type where typname = 'lead_status') then
-    create type public.lead_status as enum ('new', 'contacted', 'qualified', 'won', 'lost');
-  end if;
 
   if not exists (select 1 from pg_type where typname = 'offer_status') then
     create type public.offer_status as enum ('draft', 'pending_review', 'published', 'rejected');
@@ -113,27 +110,6 @@ create table if not exists public.hotel_options (
   custom_hotel_name text
 );
 
-create table if not exists public.leads (
-  id bigint generated always as identity primary key,
-  tour_id bigint not null references public.tours(id) on delete cascade,
-  assignee_id uuid references public.profiles(id),
-  client_first_name text not null,
-  client_last_name text not null,
-  client_phone text not null,
-  client_email text,
-  chosen_price numeric not null,
-  status public.lead_status not null default 'new',
-  internal_notes text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.commissions (
-  id bigint generated always as identity primary key,
-  lead_id bigint not null references public.leads(id) on delete cascade,
-  amount numeric not null check (amount >= 0),
-  status text not null default 'pending',
-  created_at timestamptz not null default now()
-);
 
 create table if not exists public.tour_revisions (
   id uuid primary key default gen_random_uuid(),
@@ -143,13 +119,3 @@ create table if not exists public.tour_revisions (
   created_at timestamptz default now()
 );
 
-create table if not exists public.audit_logs (
-  id bigint generated always as identity primary key,
-  table_name text not null,
-  record_id text not null,
-  action text not null check (action in ('INSERT', 'UPDATE', 'DELETE')),
-  old_data jsonb,
-  new_data jsonb,
-  changed_by uuid,
-  changed_at timestamptz not null default now()
-);
