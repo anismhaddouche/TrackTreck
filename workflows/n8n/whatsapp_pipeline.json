@@ -177,52 +177,6 @@
     },
     {
       "parameters": {
-        "operation": "upload",
-        "bucketName": "evolution",
-        "fileName": "=images/{{$now.toMillis()}}.jpg",
-        "binaryPropertyName": "image",
-        "additionalFields": {}
-      },
-      "type": "n8n-nodes-base.s3",
-      "typeVersion": 1,
-      "position": [
-        1552,
-        256
-      ],
-      "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
-      "name": "Upload a file1",
-      "credentials": {
-        "s3": {
-          "id": "ANqhzJVz1LDd3S6T",
-          "name": "S3 account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "upload",
-        "bucketName": "evolution",
-        "fileName": "=documents/{{$now.toMillis()}}.pdf",
-        "binaryPropertyName": "document",
-        "additionalFields": {}
-      },
-      "type": "n8n-nodes-base.s3",
-      "typeVersion": 1,
-      "position": [
-        1552,
-        528
-      ],
-      "id": "9e1a50bf-cdce-4593-9844-b16140f502d8",
-      "name": "Upload a file2",
-      "credentials": {
-        "s3": {
-          "id": "ANqhzJVz1LDd3S6T",
-          "name": "S3 account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "amount": 25
       },
       "type": "n8n-nodes-base.wait",
@@ -494,7 +448,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        3360,
+        3568,
         144
       ],
       "id": "c295a024-5fd5-41df-9f78-922e89c8951b",
@@ -689,6 +643,73 @@
       ],
       "id": "cff37a3d-c543-4fed-9927-8a1c7913269f",
       "name": "IF Valid Offer"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH payload AS (\n  SELECT '{{ JSON.stringify($json).replace(/'/g, \"''\") }}'::jsonb AS data\n),\n\nnormalized AS (\n  SELECT\n    COALESCE((data->>'agency_id')::bigint, 1) AS agency_id,\n    COALESCE(NULLIF(data->>'title', ''), 'Offre sans titre') AS title,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'countries', '[]'::jsonb))\n    ) AS countries,\n\n    COALESCE((data->>'duration_nights')::integer, 0) AS duration_nights,\n    NULLIF(data->>'airline', '') AS airline,\n    NULLIF(data->>'description', '') AS description,\n    COALESCE(data->'itinerary', '{}'::jsonb) AS itinerary,\n\n    COALESCE((data->>'is_global_pricing')::boolean, false) AS is_global_pricing,\n\n    CASE\n      WHEN data ? 'global_pricing'\n           AND data->'global_pricing' <> 'null'::jsonb\n      THEN data->'global_pricing'\n      ELSE NULL\n    END AS global_pricing,\n\n    COALESCE((data->>'lead_price')::numeric, 0) AS lead_price,\n\n    COALESCE(\n      data->'services',\n      '{\"included\": [], \"excluded\": []}'::jsonb\n    ) AS services,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'photo_urls', '[]'::jsonb))\n    ) AS photo_urls\n  FROM payload\n),\n\nensure_agency AS (\n  INSERT INTO public.agencies (\n    id,\n    name,\n    email,\n    phone\n  )\n  OVERRIDING SYSTEM VALUE\n  SELECT\n    agency_id,\n    'Default Agency',\n    'default@agency.local',\n    '0000000000'\n  FROM normalized\n  ON CONFLICT (id) DO NOTHING\n),\n\ninserted_tour AS (\n  INSERT INTO public.tours (\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    needs_review\n  )\n  SELECT\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    'draft'::public.offer_status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    true\n  FROM normalized\n  RETURNING id, title, status, needs_review\n),\n\ninserted_steps AS (\n  INSERT INTO public.tour_steps (\n    tour_id,\n    city,\n    step_order,\n    duration_nights\n  )\n  SELECT\n    tour.id,\n    COALESCE(NULLIF(step->>'city', ''), 'Unknown'),\n    COALESCE((step->>'step_order')::integer, ord::integer),\n    COALESCE((step->>'duration_nights')::integer, 1)\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n  RETURNING id, tour_id, step_order\n),\n\ninserted_hotel_options AS (\n  INSERT INTO public.hotel_options (\n    tour_step_id,\n    hotel_id,\n    custom_hotel_name,\n    is_default,\n    pricing\n  )\n  SELECT\n    inserted_steps.id,\n\n    CASE\n      WHEN hotel->>'hotel_id' IS NULL\n           OR hotel->>'hotel_id' = ''\n           OR hotel->>'hotel_id' = 'null'\n      THEN NULL\n      ELSE (hotel->>'hotel_id')::bigint\n    END AS hotel_id,\n\n    NULLIF(hotel->>'custom_hotel_name', '') AS custom_hotel_name,\n\n    COALESCE((hotel->>'is_default')::boolean, false) AS is_default,\n\n    COALESCE(hotel->'pricing', '{}'::jsonb) AS pricing\n\n  FROM payload p\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n\n  JOIN inserted_steps\n    ON inserted_steps.step_order = COALESCE((step->>'step_order')::integer, ord::integer)\n\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(step->'hotels', '[]'::jsonb)\n  ) AS hotels(hotel)\n\n  RETURNING id\n),\n\ninserted_departures AS (\n  INSERT INTO public.departures (\n    tour_id,\n    departure_city,\n    stock,\n    flight_departure_time,\n    flight_arrival_time,\n    return_flight_departure_time,\n    return_flight_arrival_time\n  )\n  SELECT\n    tour.id,\n\n    COALESCE(NULLIF(departure->>'departure_city', ''), 'Alger') AS departure_city,\n\n    COALESCE((departure->>'stock')::integer, 0) AS stock,\n\n    (departure->>'flight_departure_time')::timestamptz AS flight_departure_time,\n\n    COALESCE(\n      NULLIF(departure->>'flight_arrival_time', '')::timestamptz,\n      (departure->>'flight_departure_time')::timestamptz\n    ) AS flight_arrival_time,\n\n    (departure->>'return_flight_departure_time')::timestamptz AS return_flight_departure_time,\n\n    COALESCE(\n      NULLIF(departure->>'return_flight_arrival_time', '')::timestamptz,\n      (departure->>'return_flight_departure_time')::timestamptz\n    ) AS return_flight_arrival_time\n\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'departures', '[]'::jsonb)\n  ) AS departures(departure)\n\n  WHERE departure->>'flight_departure_time' IS NOT NULL\n    AND departure->>'return_flight_departure_time' IS NOT NULL\n\n  RETURNING id\n)\n\nSELECT\n  tour.id AS tour_id,\n  tour.title,\n  tour.status,\n  tour.needs_review,\n  (SELECT count(*) FROM inserted_steps) AS inserted_steps_count,\n  (SELECT count(*) FROM inserted_hotel_options) AS inserted_hotel_options_count,\n  (SELECT count(*) FROM inserted_departures) AS inserted_departures_count\nFROM inserted_tour tour;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3376,
+        144
+      ],
+      "id": "46ddc4ea-7043-4d88-89f1-e57f22977c40",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "juFKQJCwR9AlTDc8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "travel-offer-assets",
+        "fileName": "=incoming/agency-1/images/{{$now.toMillis()}}.jpg",
+        "binaryPropertyName": "image",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        256
+      ],
+      "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
+      "name": "Upload image",
+      "credentials": {
+        "s3": {
+          "id": "s29yuF2pl1XMu0Je",
+          "name": "Supabase Storage Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "evolution",
+        "fileName": "=incoming/agency-1/pdf/{{$now.toMillis()}}.pdf",
+        "binaryPropertyName": "document",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        528
+      ],
+      "id": "9e1a50bf-cdce-4593-9844-b16140f502d8",
+      "name": "Upload PDF",
+      "credentials": {
+        "s3": {
+          "id": "ANqhzJVz1LDd3S6T",
+          "name": "S3 account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -730,7 +751,7 @@
       "main": [
         [
           {
-            "node": "Upload a file1",
+            "node": "Upload image",
             "type": "main",
             "index": 0
           },
@@ -768,7 +789,7 @@
       "main": [
         [
           {
-            "node": "Upload a file2",
+            "node": "Upload PDF",
             "type": "main",
             "index": 0
           },
@@ -778,16 +799,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Upload a file1": {
-      "main": [
-        []
-      ]
-    },
-    "Upload a file2": {
-      "main": [
-        []
       ]
     },
     "Wait": {
@@ -895,7 +906,7 @@
       "main": [
         [
           {
-            "node": "Respond with Merged Result",
+            "node": "Execute a SQL query",
             "type": "main",
             "index": 0
           }
@@ -1022,6 +1033,27 @@
           }
         ]
       ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond with Merged Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload image": {
+      "main": [
+        []
+      ]
+    },
+    "Upload PDF": {
+      "main": [
+        []
+      ]
     }
   },
   "active": false,
@@ -1029,7 +1061,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "3c849dde-29d6-4bde-b239-e9787df37ac0",
+  "versionId": "7b4748de-91f9-42a9-b191-bbf3ade28415",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7514434f071a5c810a8c2c99ac94d34a4e7680e3c3fbddb41b4465f5d2957939"
