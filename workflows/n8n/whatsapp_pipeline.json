@@ -12,7 +12,7 @@
       "typeVersion": 2.1,
       "position": [
         -288,
-        160
+        224
       ],
       "id": "31f7c70b-d514-46e6-8859-2fd80458e59f",
       "name": "Webhook",
@@ -28,7 +28,7 @@
       "typeVersion": 3.4,
       "position": [
         1600,
-        -96
+        -208
       ],
       "id": "7843d6eb-0540-4942-8469-4b952ebc4851",
       "name": "Edit Fields"
@@ -62,8 +62,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1152,
-        128
+        1136,
+        192
       ],
       "id": "9aa3eda7-0c24-4b80-84ab-114df85deeb8",
       "name": "HTTP Request",
@@ -84,8 +84,8 @@
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
       "position": [
-        1344,
-        128
+        1328,
+        192
       ],
       "id": "4d3ed26f-b8f0-4fbf-a9bd-a8b332aa22db",
       "name": "Convert to File"
@@ -112,7 +112,7 @@
       "typeVersion": 1.1,
       "position": [
         1920,
-        -96
+        -208
       ],
       "id": "fa9aee6c-6092-43ae-b967-a431a3c64d99",
       "name": "Message a model",
@@ -148,7 +148,7 @@
       "typeVersion": 4.4,
       "position": [
         1152,
-        416
+        704
       ],
       "id": "104aa54a-7b00-4b1a-84cb-0f8066292fca",
       "name": "HTTP Request1",
@@ -170,7 +170,7 @@
       "typeVersion": 1.1,
       "position": [
         1344,
-        416
+        704
       ],
       "id": "a726f705-5a07-4475-8997-e9493281967e",
       "name": "Convert to File1"
@@ -182,8 +182,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1984,
-        128
+        1968,
+        192
       ],
       "id": "10a85b81-6f1c-4d34-8efc-eedac784e4fb",
       "name": "Wait",
@@ -197,7 +197,7 @@
       "typeVersion": 1.1,
       "position": [
         1984,
-        416
+        704
       ],
       "id": "eef97951-ec79-48d9-b3e2-85f02a8d8907",
       "name": "Wait1",
@@ -211,7 +211,7 @@
       "typeVersion": 2,
       "position": [
         -80,
-        160
+        224
       ],
       "id": "60eedb1f-d1c9-40f4-9561-983412a8f1eb",
       "name": "Detect Content & Generate JobId"
@@ -245,7 +245,7 @@
       "typeVersion": 2.3,
       "position": [
         736,
-        -64
+        -176
       ],
       "id": "f474fed7-1cd1-48a8-ae3a-f28310d84c0f",
       "name": "if texte"
@@ -279,7 +279,7 @@
       "typeVersion": 2.3,
       "position": [
         736,
-        432
+        720
       ],
       "id": "a1d6052c-9dfe-412e-8998-5073bf66aa62",
       "name": "if pdf"
@@ -305,8 +305,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2192,
-        128
+        2176,
+        192
       ],
       "id": "1b32de8b-fa5b-4d9f-ba92-3860d4d90035",
       "name": "Get Parse Result"
@@ -333,7 +333,7 @@
       "typeVersion": 4.4,
       "position": [
         2192,
-        416
+        704
       ],
       "id": "d205667a-58ca-48ed-b28d-bed8da2b9c6d",
       "name": "Get Parse Result 2"
@@ -375,8 +375,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1776,
-        128
+        1760,
+        192
       ],
       "id": "2ac76478-ebb9-4c9e-a697-a34bb5ff2b03",
       "name": "LLama Extraction",
@@ -420,7 +420,7 @@
       "typeVersion": 4.4,
       "position": [
         1776,
-        416
+        704
       ],
       "id": "98688a37-9caf-4d81-a658-dac2fc5256bc",
       "name": "LLama Extraction1",
@@ -433,8 +433,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3168,
-        144
+        3152,
+        208
       ],
       "id": "2b51d0a5-1412-4c12-a021-a2c4b761ac25",
       "name": "Collect & Dynamic Merge"
@@ -448,8 +448,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        3568,
-        144
+        3552,
+        208
       ],
       "id": "c295a024-5fd5-41df-9f78-922e89c8951b",
       "name": "Respond with Merged Result"
@@ -460,7 +460,7 @@
       "typeVersion": 3.2,
       "position": [
         2672,
-        -80
+        -192
       ],
       "id": "26df65f8-c10a-4e4a-be8f-9f265025cdcd",
       "name": "Merge"
@@ -470,8 +470,8 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2960,
-        144
+        2944,
+        208
       ],
       "id": "3663e08b-4e14-491e-aed7-ec33417ce8e6",
       "name": "Merge 2"
@@ -504,8 +504,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        736,
-        144
+        720,
+        208
       ],
       "id": "3b5b79ef-4a0a-4744-8847-0f76744692f0",
       "name": "if image",
@@ -519,7 +519,7 @@
       "typeVersion": 2,
       "position": [
         2384,
-        -96
+        -208
       ],
       "id": "556e04f7-592e-4141-a855-af38da222024",
       "name": "Format Text Result"
@@ -532,7 +532,7 @@
       "typeVersion": 2,
       "position": [
         2384,
-        416
+        704
       ],
       "id": "26f2cc67-d54f-4197-8192-2cf7d6267aa4",
       "name": "Format PDF Result"
@@ -544,8 +544,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2384,
-        128
+        2368,
+        192
       ],
       "id": "84ab9f6a-5ce7-4c2c-a020-71f8505d3e2f",
       "name": "Format Image Result"
@@ -558,7 +558,7 @@
       "typeVersion": 2,
       "position": [
         1152,
-        -80
+        -192
       ],
       "id": "cbd5abb1-2351-4655-9046-33602ca4857d",
       "name": "Detect Noise Text"
@@ -592,7 +592,7 @@
       "typeVersion": 2.3,
       "position": [
         1344,
-        -80
+        -192
       ],
       "id": "e39e6d5b-ff8e-451d-b3ce-337df93fc6e0",
       "name": "IF Valid Text Offer"
@@ -605,7 +605,7 @@
       "typeVersion": 2,
       "position": [
         112,
-        160
+        224
       ],
       "id": "a7e59b90-6524-4d4c-a349-b205fd7f3b9f",
       "name": "Detect Noise"
@@ -639,7 +639,7 @@
       "typeVersion": 2.3,
       "position": [
         320,
-        160
+        224
       ],
       "id": "cff37a3d-c543-4fed-9927-8a1c7913269f",
       "name": "IF Valid Offer"
@@ -653,8 +653,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        3376,
-        144
+        3360,
+        208
       ],
       "id": "46ddc4ea-7043-4d88-89f1-e57f22977c40",
       "name": "Execute a SQL query",
@@ -669,15 +669,15 @@
       "parameters": {
         "operation": "upload",
         "bucketName": "travel-offer-assets",
-        "fileName": "=incoming/agency-1/images/{{$now.toMillis()}}.jpg",
+        "fileName": "={{ \n  ($json.payload?.countries?.[0] || $json.countries?.[0] || 'unknown-country')\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '')\n}}/agency-{{ $json.payload?.agency_id || $json.agency_id || 1 }}/images/{{$now.toMillis()}}.jpg",
         "binaryPropertyName": "image",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.s3",
       "typeVersion": 1,
       "position": [
-        1552,
-        256
+        2816,
+        480
       ],
       "id": "c85f3833-9a0e-42d7-bde4-6bdfb21e2d84",
       "name": "Upload image",
@@ -691,25 +691,55 @@
     {
       "parameters": {
         "operation": "upload",
-        "bucketName": "evolution",
-        "fileName": "=incoming/agency-1/pdf/{{$now.toMillis()}}.pdf",
+        "bucketName": "travel-offer-assets",
+        "fileName": "={{ \n  ($json.payload?.countries?.[0] || $json.countries?.[0] || 'unknown-country')\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '')\n}}/agency-{{ $json.payload?.agency_id || $json.agency_id || 1 }}/pdf/{{$now.toMillis()}}.pdf",
         "binaryPropertyName": "document",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.s3",
       "typeVersion": 1,
       "position": [
-        1552,
-        528
+        2816,
+        944
       ],
       "id": "9e1a50bf-cdce-4593-9844-b16140f502d8",
       "name": "Upload PDF",
       "credentials": {
         "s3": {
-          "id": "ANqhzJVz1LDd3S6T",
-          "name": "S3 account"
+          "id": "s29yuF2pl1XMu0Je",
+          "name": "Supabase Storage Local"
         }
       }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2528,
+        480
+      ],
+      "id": "01f42bf1-209e-40d5-9c48-71b05057347c",
+      "name": "Merge Image JSON + Binary"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2544,
+        944
+      ],
+      "id": "cc6d1805-373f-4cea-9382-4c2ed21a2c4e",
+      "name": "Merge PDF JSON + Binary"
     }
   ],
   "pinData": {},
@@ -751,14 +781,14 @@
       "main": [
         [
           {
-            "node": "Upload image",
+            "node": "LLama Extraction",
             "type": "main",
             "index": 0
           },
           {
-            "node": "LLama Extraction",
+            "node": "Merge Image JSON + Binary",
             "type": "main",
-            "index": 0
+            "index": 1
           }
         ]
       ]
@@ -789,14 +819,14 @@
       "main": [
         [
           {
-            "node": "Upload PDF",
+            "node": "LLama Extraction1",
             "type": "main",
             "index": 0
           },
           {
-            "node": "LLama Extraction1",
+            "node": "Merge PDF JSON + Binary",
             "type": "main",
-            "index": 0
+            "index": 1
           }
         ]
       ]
@@ -965,6 +995,11 @@
             "node": "Merge 2",
             "type": "main",
             "index": 1
+          },
+          {
+            "node": "Merge PDF JSON + Binary",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -976,6 +1011,11 @@
             "node": "Merge",
             "type": "main",
             "index": 1
+          },
+          {
+            "node": "Merge Image JSON + Binary",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1054,6 +1094,28 @@
       "main": [
         []
       ]
+    },
+    "Merge Image JSON + Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge PDF JSON + Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -1061,7 +1123,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "7b4748de-91f9-42a9-b191-bbf3ade28415",
+  "versionId": "7e887c34-d8b6-4b7a-a63d-446a354fdf9a",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "7514434f071a5c810a8c2c99ac94d34a4e7680e3c3fbddb41b4465f5d2957939"
