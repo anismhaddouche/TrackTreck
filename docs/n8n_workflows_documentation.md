@@ -76,7 +76,8 @@ graph TD
     FP --> J
     
     J --> K["⚙️ Collect &<br/>Dynamic Merge"]
-    K --> L["✅ Respond with<br/>Merged Result"]
+    K --> SQL["💾 Execute a SQL query<br/>(Supabase Insertion)"]
+    SQL --> L["✅ Respond with<br/>Merged Result"]
 ```
 
 > [!IMPORTANT]
@@ -154,7 +155,7 @@ Cette branche traite les **images** (photos d'affiches, flyers, captures d'écra
 | 1 | `if image` | Vérifie la présence d'une image dans le message |
 | 2 | `HTTP Request` | Appelle Evolution API pour récupérer l'image en **Base64** |
 | 3 | `Convert to File` | Convertit le Base64 en fichier binaire (propriété `image`) |
-| 4a | `Upload a file1` | **Archivage** : Upload de l'image sur S3 (`evolution/images/{timestamp}.jpg`) |
+| 4a | `Upload image` | **Archivage** : Upload de l'image sur S3 (`incoming/agency-1/images/{timestamp}.jpg` dans `travel-offer-assets`) |
 | 4b | `LLama Extraction` | **Extraction** : Envoi de l'image à LlamaIndex Cloud pour parsing intelligent |
 | 5 | `Wait` | Pause de **15 secondes** — temps de traitement LlamaIndex |
 | 6 | `Get Parse Result` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
@@ -176,7 +177,7 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | 1 | `if pdf` | Vérifie la présence d'un PDF dans le message |
 | 2 | `HTTP Request1` | Appelle Evolution API pour récupérer le PDF en **Base64** |
 | 3 | `Convert to File1` | Convertit le Base64 en fichier binaire (propriété `document`) |
-| 4a | `Upload a file2` | **Archivage** : Upload du PDF sur S3 (`evolution/documents/{timestamp}.pdf`) |
+| 4a | `Upload PDF` | **Archivage** : Upload du PDF sur S3 (`incoming/agency-1/pdf/{timestamp}.pdf` dans `evolution`) |
 | 4b | `LLama Extraction1` | **Extraction** : Envoi du PDF à LlamaIndex Cloud avec des instructions de parsing très détaillées |
 | 5 | `Wait1` | Pause de **25 secondes** — temps de traitement LlamaIndex (plus long pour les PDF) |
 | 6 | `Get Parse Result 2` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
@@ -190,7 +191,7 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | Critère | Image | PDF |
 |---------|-------|-----|
 | Temps d'attente LlamaIndex | 15 secondes | 25 secondes |
-| Chemin S3 | `images/{timestamp}.jpg` | `documents/{timestamp}.pdf` |
+| Chemin S3 | `incoming/agency-1/images/{timestamp}.jpg` | `incoming/agency-1/pdf/{timestamp}.pdf` |
 | Prompt d'extraction | Court, schéma JSON inclus | Très détaillé, 13 règles obligatoires |
 | Propriété binaire | `image` | `document` |
 
@@ -204,8 +205,9 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 |-------|------|-------------|
 | 1 | `Merge` | Fusionne les sorties de la branche **Texte** et de la branche **Image** |
 | 2 | `Merge 2` | Fusionne le résultat du `Merge` avec la sortie de la branche **PDF** |
-| 3 | `Collect & Dynamic Merge` | Logique métier de fusion intelligente — combine les résultats partiels en un seul objet |
-| 4 | `Respond with Merged Result` | Retourne la réponse HTTP 200 avec le JSON final |
+| 3 | `Collect & Dynamic Merge` | Logique métier de fusion intelligente — combine les résultats partiels en un seul objet JSON unifié |
+| 4 | `Execute a SQL query` | Insère directement les données finalisées dans la base de données PostgreSQL (Supabase) via une requête transactionnelle (CTE) |
+| 5 | `Respond with Merged Result` | Retourne la réponse HTTP 200 avec les résultats d'insertion de la base de données |
 
 > [!IMPORTANT]
 > Le nœud `Collect & Dynamic Merge` est le **cœur de la logique métier de fusion**. Il implémente un algorithme de merge qui :
@@ -344,13 +346,13 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.9 `Upload a file1` / `Upload a file2` (Archivage S3)
-| Propriété | Image (`Upload a file1`) | PDF (`Upload a file2`) |
+### 4.9 `Upload image` / `Upload PDF` (Archivage S3)
+| Propriété | Image (`Upload image`) | PDF (`Upload PDF`) |
 |-----------|-------------------------|-------------------------|
 | **Type** | `n8n-nodes-base.s3` | `n8n-nodes-base.s3` |
-| **Bucket** | `evolution` | `evolution` |
-| **Chemin** | `images/{timestamp_ms}.jpg` | `documents/{timestamp_ms}.pdf` |
-| **Rôle métier** | Archive le média original dans un stockage S3 pour **traçabilité** et **validation ultérieure** par un administrateur. Ces nœuds sont en "fire-and-forget" : leur résultat n'alimente pas la suite du pipeline. |
+| **Bucket** | `travel-offer-assets` | `evolution` |
+| **Chemin** | `incoming/agency-1/images/{timestamp_ms}.jpg` | `incoming/agency-1/pdf/{timestamp_ms}.pdf` |
+| **Rôle métier** | Archive le média original dans un stockage S3 pour **traçabilité** et **validation ultérieure**. Ces nœuds sont en "fire-and-forget" : leur résultat n'alimente pas la suite du pipeline. |
 
 ---
 
@@ -445,12 +447,21 @@ Branche PDF ─────────────────┘
 
 ---
 
-### 4.16 `Respond with Merged Result`
+### 4.16 `Execute a SQL query`
+| Propriété | Valeur |
+|-----------|--------|
+| **Type** | `n8n-nodes-base.postgres` |
+| **Opération** | `executeQuery` |
+| **Rôle métier** | Insère l'objet métier final directement dans la base de données PostgreSQL de production (Supabase). Utilise une CTE (Common Table Expression) SQL complexe pour insérer de manière transactionnelle : l'agence (si manquante), l'offre (`tours`), les étapes (`tour_steps`), les options d'hôtels (`hotel_options`), et les départs (`departures`). Retourne un résumé du nombre de lignes insérées. |
+
+---
+
+### 4.17 `Respond with Merged Result`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.respondToWebhook` |
 | **Code HTTP** | `200` |
-| **Rôle métier** | Envoie la réponse HTTP au client qui a déclenché le webhook. Le body contient l'objet JSON final fusionné représentant l'offre de voyage structurée. |
+| **Rôle métier** | Envoie la réponse HTTP au client qui a déclenché le webhook. Le body contient désormais le résumé d'insertion retourné par la base de données. |
 
 ---
 
@@ -519,7 +530,8 @@ graph LR
 | Branche Image → Merge | JSON d'offre extrait par LlamaIndex |
 | Branche PDF → Merge 2 | JSON d'offre extrait par LlamaIndex |
 | Merge 2 → Collect & Dynamic Merge | Tableau de tous les résultats partiels |
-| Collect & Dynamic Merge → Respond | JSON final unifié |
+| Collect & Dynamic Merge → Execute a SQL query | JSON final unifié |
+| Execute a SQL query → Respond | Résumé d'insertion SQL |
 
 ---
 
@@ -598,9 +610,11 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 
 | Nom | Type | Utilisé par |
 |-----|------|-------------|
-| `apikey` | HTTP Header Auth | `HTTP Request` (récupération image) |
+| `apikey` | HTTP Header Auth | `HTTP Request`, `HTTP Request1` (récupération médias) |
 | `Google Gemini(PaLM) Api account` | Google PaLM API | `Message a model` |
-| `S3 account` | S3 | `Upload a file1`, `Upload a file2` |
+| `Supabase Storage Local` | S3 | `Upload image` |
+| `S3 account` | S3 | `Upload PDF` |
+| `Postgres account` | Postgres | `Execute a SQL query` |
 
 ---
 
