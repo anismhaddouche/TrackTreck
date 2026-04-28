@@ -44,12 +44,14 @@ La logique métier s'articule autour des tables suivantes :
 - `hotels` : C'est le référentiel des hôtels disponibles.
 - `departures` : Contient les dates de départs réels pour une offre donnée, ainsi que l'état de leur stock.
 - `agencies` : Représente les agences qui proposent les offres de voyage.
+- `profiles` : Contient les profils utilisateurs (admin, agent, client) liés aux agences.
+- `tour_revisions` : Historique des commentaires et révisions effectués lors du processus de validation.
 
-*Si d'autres tables sont présentes dans le schéma, elles le sont généralement pour maintenir la cohérence avec l'environnement de production. Toutefois, pour tout ce qui concerne le cœur métier et le traitement des nouvelles offres depuis le pipeline, les interactions tournent principalement autour des tables mentionnées ci-dessus.*
+*Si d'autres tables comme `airlines` sont présentes dans le schéma, elles le sont généralement pour maintenir la cohérence avec l'environnement de production. Toutefois, pour tout ce qui concerne le cœur métier et le traitement des nouvelles offres depuis le pipeline, les interactions tournent principalement autour des tables mentionnées ci-dessus.*
 
 ## 5. Création des tables
 La structure de base (tables, types, fonctions) n'est pas mise en place manuellement. Elle est créée à l'aide de **migrations SQL**. 
-Celles-ci se situent toutes dans le dossier `supabase/migrations/` sous forme de fichiers horodatés (par exemple `20240420120000_initial_schema.sql`).
+Celles-ci se situent toutes dans le dossier `supabase/migrations/` sous forme de fichiers horodatés (par exemple `202605180001_init_schema.sql`).
 
 Pour appliquer toutes ces migrations SQL depuis une base vierge, ou pour remettre la base locale complètement à zéro, utilisez la commande suivante :
 ```bash
@@ -67,11 +69,12 @@ Afin de bien comprendre le format et le métier attendu, voici un focus sur ses 
 - `duration_nights` : Durée du séjour, exprimée en nombre de nuits.
 - `airline` : Compagnie(s) aérienne(s) intégrée(s) pour le vol principal.
 - `description` : Texte de présentation descriptif global du circuit.
-- `itinerary` : Détail jour par jour du parcours.
+- `itinerary` : Détail jour par jour du parcours (format JSONB).
+- `status` : État de l'offre, utilise l'énumération `offer_status` (`draft`, `pending_review`, `published`, `rejected`).
 - `is_global_pricing` : Booléen indiquant si l'offre a un tarif unifié plutôt qu'un calcul étape par étape.
-- `global_pricing` : Informations tarifaires dans le cas d'un prix global (ex: suppléments, base).
+- `global_pricing` : Informations tarifaires dans le cas d'un prix global (format JSONB).
 - `lead_price` : Prix d'appel ("à partir de").
-- `services` : Les prestations et services inclus ou non-inclus dans le circuit.
+- `services` : Les prestations incluses ou exclues (format JSONB).
 
 **Règles de validation primordiales :**
 Deux champs cruciaux de la table `tours` possèdent des comportements par défaut définis directement à la création de la table en SQL :
@@ -121,4 +124,4 @@ Pour faire simple, voici l'essentiel pour être très vite autonome :
 3. Réinitialisez la donnée / le schéma au besoin avec `npx supabase db reset`.
 4. N'oubliez pas le fonctionnement par défaut du pipeline : tout ce qui arrive sur `tours` est un brouillon en attente de relecture (`status='draft'`, `needs_review=true`) !
 
-Bon code et bon développement sur le projet ! 🚀
+
