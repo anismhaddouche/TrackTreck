@@ -27,16 +27,16 @@
 
 TrackTreck est un système d'automatisation qui **intercepte des offres de voyage diffusées sur un groupe WhatsApp** et les **transforme automatiquement en données structurées** exploitables par une application métier.
 
-Le pipeline n8n agit comme le **cœur d'orchestration** du système. Il reçoit les messages WhatsApp via un webhook (connecté à Evolution API), détecte le type de contenu (texte, image, PDF), lance les extractions en parallèle via de l'IA, puis fusionne les résultats en un JSON normalisé.
+Le pipeline n8n agit comme le **cœur d'orchestration** du système. Il reçoit les messages WhatsApp via un webhook (connecté à Evolution API), détecte le type de contenu (texte, image, PDF), lance les extractions en parallèle via de l'IA, stocke les fichiers médias dans **Supabase Storage**, puis fusionne les résultats pour les insérer automatiquement dans **Supabase Database** (PostgreSQL).
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FLUX GLOBAL DU SYSTÈME                       │
-│                                                                 │
-│   WhatsApp    Evolution API     n8n Pipeline     Stockage       │
-│   ────────►   ────────────►   ──────────────►   ──────────►     │
-│   (Groupe)     (Webhook)      (Extraction IA)    (S3 + JSON)    │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FLUX GLOBAL DU SYSTÈME                            │
+│                                                                             │
+│   WhatsApp    Evolution API     n8n Pipeline         Supabase               │
+│   ────────►   ────────────►   ──────────────►   ──────────────────────►     │
+│   (Groupe)     (Webhook)      (Extraction IA)   (Storage Fichiers + DB)     │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -63,20 +63,26 @@ graph TD
     NT --> VTO{"IF Valid Text ?"}
     VTO -->|✅ Oui| F["📝 Branche TEXTE<br/>Gemini AI"]
     
-    D -->|✅ Oui| G["🖼️ Branche IMAGE<br/>LlamaIndex + S3"]
-    E -->|✅ Oui| H["📄 Branche PDF<br/>LlamaIndex + S3"]
+    D -->|✅ Oui| G["🖼️ Branche IMAGE<br/>LlamaIndex"]
+    E -->|✅ Oui| H["📄 Branche PDF<br/>LlamaIndex"]
     
     F --> FT["⚙️ Format Text Result"]
     G --> FI["⚙️ Format Image Result"]
     H --> FP["⚙️ Format PDF Result"]
+
+    FI --> MI["🔀 Merge Image<br/>JSON + Binary"]
+    FP --> MP["🔀 Merge PDF<br/>JSON + Binary"]
     
+    MI --> U1["☁️ Upload Image<br/>(Supabase Storage)"]
+    MP --> U2["☁️ Upload PDF<br/>(Supabase Storage)"]
+
     FT --> I["🔀 Merge 1<br/>(Texte + Image)"]
-    FI --> I
+    U1 --> I
     I --> J["🔀 Merge 2<br/>(Merge 1 + PDF)"]
-    FP --> J
+    U2 --> J
     
     J --> K["⚙️ Collect &<br/>Dynamic Merge"]
-    K --> SQL["💾 Execute a SQL query<br/>(Supabase Insertion)"]
+    K --> SQL["💾 Execute SQL Query<br/>(Supabase DB)"]
     SQL --> L["✅ Respond with<br/>Merged Result"]
 ```
 
@@ -100,9 +106,10 @@ Ce workflow est le **pipeline principal** de TrackTreck. Sa mission métier est 
 1. **Recevoir** un message WhatsApp transmis par Evolution API via webhook
 2. **Classifier** automatiquement le type de contenu (texte brut, image, document PDF)
 3. **Extraire** les données structurées de l'offre de voyage via intelligence artificielle
-4. **Archiver** les médias originaux (images, PDF) sur un stockage S3
+4. **Stocker** les médias originaux (images, PDF) dans un bucket privé **Supabase Storage** (classés par pays et agence)
 5. **Fusionner** les résultats partiels de chaque source en un JSON unifié
-6. **Répondre** au webhook avec l'objet JSON final normalisé
+6. **Insérer** les données structurées (avec le statut `draft` et `needs_review: true`) dans la base de données **Supabase**
+7. **Répondre** au webhook avec le résumé de l'insertion SQL
 
 ---
 
@@ -144,7 +151,7 @@ Cette branche traite le **contenu textuel** du message WhatsApp (conversation si
 
 ---
 
-### 3.4 Branche IMAGE — Extraction via LlamaIndex + Archivage S3
+### 3.4 Branche IMAGE — Extraction via LlamaIndex + Supabase Storage
 
 **Condition d'activation** : `hasImage === true`
 
@@ -155,18 +162,19 @@ Cette branche traite les **images** (photos d'affiches, flyers, captures d'écra
 | 1 | `if image` | Vérifie la présence d'une image dans le message |
 | 2 | `HTTP Request` | Appelle Evolution API pour récupérer l'image en **Base64** |
 | 3 | `Convert to File` | Convertit le Base64 en fichier binaire (propriété `image`) |
-| 4a | `Upload image` | **Archivage** : Upload de l'image sur S3 (`incoming/agency-1/images/{timestamp}.jpg` dans `travel-offer-assets`) |
-| 4b | `LLama Extraction` | **Extraction** : Envoi de l'image à LlamaIndex Cloud pour parsing intelligent |
+| 4 | `LLama Extraction` | **Extraction** : Envoi de l'image à LlamaIndex Cloud pour parsing intelligent |
 | 5 | `Wait` | Pause de **15 secondes** — temps de traitement LlamaIndex |
 | 6 | `Get Parse Result` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
 | 7 | `Format Image Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
+| 8 | `Merge Image JSON + Binary` | Fusionne le JSON extrait (Input 1) et le fichier binaire (Input 2) pour l'upload |
+| 9 | `Upload image` | **Archivage** : Upload de l'image sur Supabase Storage (bucket `travel-offer-assets` organisé par pays et agence) |
 
 > [!NOTE]
-> Les étapes 4a (archivage S3) et 4b (extraction LlamaIndex) s'exécutent **en parallèle** après la conversion en fichier. L'archivage est un "fire-and-forget" — son résultat n'alimente pas la suite du pipeline.
+> L'étape de merge avant l'upload (étape 8) est obligatoire pour fournir au nœud Supabase Storage à la fois les informations extraites pour construire le chemin dynamique (pays, agence) et le fichier binaire de l'image à uploader.
 
 ---
 
-### 3.5 Branche PDF — Extraction via LlamaIndex + Archivage S3
+### 3.5 Branche PDF — Extraction via LlamaIndex + Supabase Storage
 
 **Condition d'activation** : `hasPdf === true`
 
@@ -177,11 +185,12 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | 1 | `if pdf` | Vérifie la présence d'un PDF dans le message |
 | 2 | `HTTP Request1` | Appelle Evolution API pour récupérer le PDF en **Base64** |
 | 3 | `Convert to File1` | Convertit le Base64 en fichier binaire (propriété `document`) |
-| 4a | `Upload PDF` | **Archivage** : Upload du PDF sur S3 (`incoming/agency-1/pdf/{timestamp}.pdf` dans `evolution`) |
-| 4b | `LLama Extraction1` | **Extraction** : Envoi du PDF à LlamaIndex Cloud avec des instructions de parsing très détaillées |
+| 4 | `LLama Extraction1` | **Extraction** : Envoi du PDF à LlamaIndex Cloud avec des instructions de parsing très détaillées |
 | 5 | `Wait1` | Pause de **25 secondes** — temps de traitement LlamaIndex (plus long pour les PDF) |
 | 6 | `Get Parse Result 2` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
 | 7 | `Format PDF Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
+| 8 | `Merge PDF JSON + Binary` | Fusionne le JSON extrait avec le fichier binaire issu du nœud `Convert to File1` |
+| 9 | `Upload PDF` | **Archivage** : Upload du PDF sur Supabase Storage (bucket `travel-offer-assets` organisé par pays et agence) |
 
 > [!TIP]
 > Le temps d'attente est de 25 secondes pour les PDF (vs 15 secondes pour les images) car les documents PDF contiennent généralement plus de contenu à analyser (tableaux de prix, programmes jour par jour).
@@ -191,7 +200,7 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | Critère | Image | PDF |
 |---------|-------|-----|
 | Temps d'attente LlamaIndex | 15 secondes | 25 secondes |
-| Chemin S3 | `incoming/agency-1/images/{timestamp}.jpg` | `incoming/agency-1/pdf/{timestamp}.pdf` |
+| Chemin Supabase Storage | `{country}/agency-{agency_id}/images/{timestamp}.jpg` | `{country}/agency-{agency_id}/pdf/{timestamp}.pdf` |
 | Prompt d'extraction | Court, schéma JSON inclus | Très détaillé, 13 règles obligatoires |
 | Propriété binaire | `image` | `document` |
 
@@ -346,17 +355,26 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.9 `Upload image` / `Upload PDF` (Archivage S3)
-| Propriété | Image (`Upload image`) | PDF (`Upload PDF`) |
-|-----------|-------------------------|-------------------------|
-| **Type** | `n8n-nodes-base.s3` | `n8n-nodes-base.s3` |
-| **Bucket** | `travel-offer-assets` | `evolution` |
-| **Chemin** | `incoming/agency-1/images/{timestamp_ms}.jpg` | `incoming/agency-1/pdf/{timestamp_ms}.pdf` |
-| **Rôle métier** | Archive le média original dans un stockage S3 pour **traçabilité** et **validation ultérieure**. Ces nœuds sont en "fire-and-forget" : leur résultat n'alimente pas la suite du pipeline. |
+### 4.9 `Merge Image/PDF JSON + Binary`
+| Propriété | Valeur |
+|-----------|--------|
+| **Type** | `n8n-nodes-base.merge` |
+| **Mode** | `Combine by position` |
+| **Rôle métier** | Nœud technique crucial pour synchroniser le flux de l'IA (JSON) et de l'API Evolution (binaire). Fusionne le JSON (Input 1) et le fichier média binaire (Input 2) pour que le nœud d'upload Supabase puisse à la fois lire les métadonnées (pour le chemin du dossier pays/agence) et envoyer le contenu binaire. |
 
 ---
 
-### 4.10 `LLama Extraction` / `LLama Extraction1` (Envoi à LlamaIndex)
+### 4.10 `Upload image` / `Upload PDF` (Supabase Storage)
+| Propriété | Image (`Upload image`) | PDF (`Upload PDF`) |
+|-----------|-------------------------|-------------------------|
+| **Type** | `n8n-nodes-base.supabase` | `n8n-nodes-base.supabase` |
+| **Bucket** | `travel-offer-assets` (privé) | `travel-offer-assets` (privé) |
+| **Chemin dynamique** | `{country}/agency-{agency_id}/images/{timestamp}.jpg` | `{country}/agency-{agency_id}/pdf/{timestamp}.pdf` |
+| **Rôle métier** | Stocke de façon persistante le média original dans Supabase Storage. L'arborescence dynamique permet un classement hiérarchique par pays, puis par agence, et enfin par type de média. |
+
+---
+
+### 4.11 `LLama Extraction` / `LLama Extraction1` (Envoi à LlamaIndex)
 | Propriété | Image | PDF |
 |-----------|-------|-----|
 | **Type** | `n8n-nodes-base.httpRequest` | `n8n-nodes-base.httpRequest` |
@@ -373,7 +391,7 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.11 `Wait` / `Wait1` (Attente LlamaIndex)
+### 4.12 `Wait` / `Wait1` (Attente LlamaIndex)
 | Propriété | Image (`Wait`) | PDF (`Wait1`) |
 |-----------|---------------|----------------|
 | **Durée** | 15 secondes | 25 secondes |
@@ -381,7 +399,7 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.12 `Get Parse Result` / `Get Parse Result 2`
+### 4.13 `Get Parse Result` / `Get Parse Result 2`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.httpRequest` |
@@ -390,7 +408,7 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.13 `Format Text Result` / `Format Image Result` / `Format PDF Result`
+### 4.14 `Format Text Result` / `Format Image Result` / `Format PDF Result`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.code` |
@@ -398,7 +416,7 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 
 ---
 
-### 4.14 `Merge` / `Merge 2`
+### 4.15 `Merge` / `Merge 2`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.merge` |
@@ -416,7 +434,7 @@ Branche PDF ─────────────────┘
 
 ---
 
-### 4.15 `Collect & Dynamic Merge`
+### 4.16 `Collect & Dynamic Merge`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.code` |
@@ -447,21 +465,21 @@ Branche PDF ─────────────────┘
 
 ---
 
-### 4.16 `Execute a SQL query`
+### 4.17 `Execute a SQL query`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.postgres` |
 | **Opération** | `executeQuery` |
-| **Rôle métier** | Insère l'objet métier final directement dans la base de données PostgreSQL de production (Supabase). Utilise une CTE (Common Table Expression) SQL complexe pour insérer de manière transactionnelle : l'agence (si manquante), l'offre (`tours`), les étapes (`tour_steps`), les options d'hôtels (`hotel_options`), et les départs (`departures`). Retourne un résumé du nombre de lignes insérées. |
+| **Rôle métier** | Insère l'objet métier final directement dans la base de données PostgreSQL de production (Supabase). Utilise une CTE (Common Table Expression) SQL complexe pour insérer de manière transactionnelle : l'agence par défaut (si manquante), l'offre (`tours`), les étapes (`tour_steps`), les options d'hôtels (`hotel_options`), et les départs (`departures`). Applique automatiquement le statut `status = 'draft'` et `needs_review = true` (offre "à valider"). Retourne un résumé du nombre de lignes insérées. |
 
 ---
 
-### 4.17 `Respond with Merged Result`
+### 4.18 `Respond with Merged Result`
 | Propriété | Valeur |
 |-----------|--------|
 | **Type** | `n8n-nodes-base.respondToWebhook` |
 | **Code HTTP** | `200` |
-| **Rôle métier** | Envoie la réponse HTTP au client qui a déclenché le webhook. Le body contient désormais le résumé d'insertion retourné par la base de données. |
+| **Rôle métier** | Envoie la réponse HTTP au client qui a déclenché le webhook. Le body contient le résumé d'insertion retourné par Supabase. |
 
 ---
 
@@ -598,7 +616,8 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 | **Evolution API** | Passerelle WhatsApp — interception des messages et récupération des médias | `http://host.docker.internal:8080` | Docker local |
 | **Google Gemini** (Gemma 3 12B) | IA générative pour extraction textuelle | API Google PaLM | Credential n8n `Google Gemini(PaLM) Api account` |
 | **LlamaIndex Cloud** (LlamaParse) | Parsing intelligent de documents et images | `https://api.cloud.llamaindex.ai` | Variable d'env `LLAMA_PARSE_API_KEY` |
-| **S3 Compatible** | Stockage objet pour archivage des médias | Credential n8n `S3 account` | Bucket `evolution` |
+| **Supabase Storage** | Stockage objet sécurisé pour les images et documents PDF extraits | Credential n8n `Supabase Storage Local` | Bucket `travel-offer-assets` (Privé) |
+| **Supabase DB** | Base de données métier (PostgreSQL) | Credential n8n `Postgres account` | Base `postgres` (port 54322) |
 
 ### Variables d'environnement requises
 
@@ -612,8 +631,7 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 |-----|------|-------------|
 | `apikey` | HTTP Header Auth | `HTTP Request`, `HTTP Request1` (récupération médias) |
 | `Google Gemini(PaLM) Api account` | Google PaLM API | `Message a model` |
-| `Supabase Storage Local` | S3 | `Upload image` |
-| `S3 account` | S3 | `Upload PDF` |
+| `Supabase Storage Local` | Supabase / S3 | `Upload image`, `Upload PDF` |
 | `Postgres account` | Postgres | `Execute a SQL query` |
 
 ---
