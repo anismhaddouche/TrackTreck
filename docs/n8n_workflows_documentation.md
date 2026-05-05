@@ -19,7 +19,9 @@
 5. [Liens métier entre les branches](#5-liens-métier-entre-les-branches)
 6. [Schéma JSON de sortie](#6-schéma-json-de-sortie)
 7. [Services externes et dépendances](#7-services-externes-et-dépendances)
-8. [Glossaire](#8-glossaire)
+8. [Déploiement Local (Prérequis techniques)](#8-déploiement-local-prérequis-techniques)
+9. [Glossaire](#9-glossaire)
+10. [Axes d'amélioration](#10-axes-damélioration)
 
 ---
 
@@ -59,9 +61,7 @@ graph TD
     VO -->|✅ Oui| D{"hasImage ?"}
     VO -->|✅ Oui| E{"hasPdf ?"}
     
-    C -->|✅ Oui| NT["🛡️ Detect Noise Text"]
-    NT --> VTO{"IF Valid Text ?"}
-    VTO -->|✅ Oui| F["📝 Branche TEXTE<br/>Gemini AI"]
+    C -->|✅ Oui| F["📝 Branche TEXTE<br/>Gemini AI"]
     
     D -->|✅ Oui| G["🖼️ Branche IMAGE<br/>LlamaIndex"]
     E -->|✅ Oui| H["📄 Branche PDF<br/>LlamaIndex"]
@@ -70,19 +70,26 @@ graph TD
     G --> FI["⚙️ Format Image Result"]
     H --> FP["⚙️ Format PDF Result"]
 
-    FI --> MI["🔀 Merge Image<br/>JSON + Binary"]
-    FP --> MP["🔀 Merge PDF<br/>JSON + Binary"]
-    
-    MI --> U1["☁️ Upload Image<br/>(Supabase Storage)"]
-    MP --> U2["☁️ Upload PDF<br/>(Supabase Storage)"]
-
     FT --> I["🔀 Merge 1<br/>(Texte + Image)"]
-    U1 --> I
+    FI --> I
     I --> J["🔀 Merge 2<br/>(Merge 1 + PDF)"]
-    U2 --> J
+    FP --> J
     
     J --> K["⚙️ Collect &<br/>Dynamic Merge"]
-    K --> SQL["💾 Execute SQL Query<br/>(Supabase DB)"]
+    K --> SLUG["🔤 Compute Slugs"]
+    SLUG --> LSF["📁 List Storage Folder"]
+    LSF --> BSP["🏗️ Build Storage Path"]
+    
+    BSP --> MI["🔀 Merge Image"]
+    MI --> U1["☁️ Upload Image"]
+    
+    BSP --> MP["🔀 Merge PDF"]
+    MP --> U2["☁️ Upload PDF"]
+    
+    BSP --> PC["📝 Prepare Caption"]
+    PC --> UC["☁️ Upload Caption"]
+    
+    BSP --> SQL["💾 Execute SQL Query<br/>(Supabase DB)"]
     SQL --> L["✅ Respond with<br/>Merged Result"]
 ```
 
@@ -135,11 +142,9 @@ Cette branche traite le **contenu textuel** du message WhatsApp (conversation si
 | Ordre | Nœud | Rôle métier |
 |-------|------|-------------|
 | 1 | `if texte` | Vérifie la présence de texte dans le message |
-| 2 | `Detect Noise Text` | Refiltre spécifiquement le texte pour ignorer les textes sans valeur métier (ex: un flyer image valide mais accompagné d'un simple "ok") |
-| 3 | `IF Valid Text Offer` | Vérifie si le booléen `is_valid_offer` est vrai avant de solliciter le modèle IA |
-| 4 | `Edit Fields` | Formate le texte brut en objet structuré `{text, type, sender}` |
-| 5 | `Message a model` | Envoie le texte au modèle **Gemma 3 12B** (Google Gemini) avec un prompt d'extraction spécialisé voyage |
-| 6 | `Format Text Result` | Parse la réponse du modèle IA, nettoie le JSON, applique des corrections métier et enrobe le résultat payload (`_hasData`) |
+| 2 | `Edit Fields` | Formate le texte brut en objet structuré `{text, type, sender}` |
+| 3 | `Message a model` | Envoie le texte au modèle **Gemma 3 12B** (Google Gemini) avec un prompt d'extraction spécialisé voyage |
+| 4 | `Format Text Result` | Parse la réponse du modèle IA, nettoie le JSON, applique des corrections métier et enrobe le résultat payload (`_hasData`) |
 
 > [!NOTE]
 > Le modèle IA utilisé est `gemma-3-12b-it` via l'API Google Gemini. Le prompt est entièrement en anglais et contient le schéma JSON de sortie attendu. Le nœud est configuré avec `retryOnFail: true` pour résilience.
@@ -166,11 +171,9 @@ Cette branche traite les **images** (photos d'affiches, flyers, captures d'écra
 | 5 | `Wait` | Pause de **15 secondes** — temps de traitement LlamaIndex |
 | 6 | `Get Parse Result` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
 | 7 | `Format Image Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
-| 8 | `Merge Image JSON + Binary` | Fusionne le JSON extrait (Input 1) et le fichier binaire (Input 2) pour l'upload |
-| 9 | `Upload image` | **Archivage** : Upload de l'image sur Supabase Storage (bucket `travel-offer-assets` organisé par pays et agence) |
 
 > [!NOTE]
-> L'étape de merge avant l'upload (étape 8) est obligatoire pour fournir au nœud Supabase Storage à la fois les informations extraites pour construire le chemin dynamique (pays, agence) et le fichier binaire de l'image à uploader.
+> L'étape d'upload S3 a été déplacée en fin de pipeline (Phase de fusion) pour pouvoir utiliser les données finales (pays, agence) afin de nommer les dossiers de stockage de manière fiable.
 
 ---
 
@@ -189,8 +192,6 @@ Cette branche traite les **documents PDF** (brochures, programmes de voyage, gri
 | 5 | `Wait1` | Pause de **25 secondes** — temps de traitement LlamaIndex (plus long pour les PDF) |
 | 6 | `Get Parse Result 2` | Récupère le résultat du parsing auprès de l'API LlamaIndex |
 | 7 | `Format PDF Result` | Extrait le JSON de LlamaIndex, le normalise et l'enrobe comme payload (`_hasData`) |
-| 8 | `Merge PDF JSON + Binary` | Fusionne le JSON extrait avec le fichier binaire issu du nœud `Convert to File1` |
-| 9 | `Upload PDF` | **Archivage** : Upload du PDF sur Supabase Storage (bucket `travel-offer-assets` organisé par pays et agence) |
 
 > [!TIP]
 > Le temps d'attente est de 25 secondes pour les PDF (vs 15 secondes pour les images) car les documents PDF contiennent généralement plus de contenu à analyser (tableaux de prix, programmes jour par jour).
@@ -215,8 +216,12 @@ Cette phase est le **Fan-In** : elle rassemble les résultats partiels de toutes
 | 1 | `Merge` | Fusionne les sorties de la branche **Texte** et de la branche **Image** |
 | 2 | `Merge 2` | Fusionne le résultat du `Merge` avec la sortie de la branche **PDF** |
 | 3 | `Collect & Dynamic Merge` | Logique métier de fusion intelligente — combine les résultats partiels en un seul objet JSON unifié |
-| 4 | `Execute a SQL query` | Insère directement les données finalisées dans la base de données PostgreSQL (Supabase) via une requête transactionnelle (CTE) |
-| 5 | `Respond with Merged Result` | Retourne la réponse HTTP 200 avec les résultats d'insertion de la base de données |
+| 4 | `Compute Slugs` | Génère les slugs propres (ex: nom du pays) pour structurer l'arborescence des fichiers de sauvegarde |
+| 5 | `List Storage Folder` | Vérifie l'existence des dossiers cibles sur Supabase Storage |
+| 6 | `Build Storage Path` | Construit les chemins finaux et déclenche l'exécution en parallèle des sauvegardes (DB + Storage) |
+| 7 | **Archivage S3** | `Upload image`, `Upload PDF`, et `Upload Caption` s'exécutent pour sauvegarder les médias et le texte original |
+| 8 | `Execute a SQL query` | Insère directement les données finalisées dans la base de données PostgreSQL (Supabase) via une requête transactionnelle (CTE) |
+| 9 | `Respond with Merged Result` | Retourne la réponse HTTP 200 avec les résultats de la base de données |
 
 > [!IMPORTANT]
 > Le nœud `Collect & Dynamic Merge` est le **cœur de la logique métier de fusion**. Il implémente un algorithme de merge qui :
@@ -483,6 +488,14 @@ Branche PDF ─────────────────┘
 
 ---
 
+### 4.19 `Error Logger (manuel)`
+| Propriété | Valeur |
+|-----------|--------|
+| **Type** | `n8n-nodes-base.code` |
+| **Rôle métier** | Nœud utilitaire de gestion d'erreur. Conçu pour être connecté manuellement aux sorties d'erreur des nœuds critiques (ayant l'option `continueOnFail` activée). Il capture l'erreur, l'identifiant du job, et loggue un message d'erreur structuré dans la console du serveur n8n pour faciliter le debugging. |
+
+---
+
 ## 5. Liens métier entre les branches
 
 ### 5.1 Complémentarité des sources
@@ -636,7 +649,34 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 
 ---
 
-## 8. Glossaire
+## 8. Déploiement Local (Prérequis techniques)
+
+Pour lancer le pipeline n8n en local, plusieurs étapes manuelles sont requises en raison de l'architecture actuelle du dépôt :
+
+1. **Création du volume Docker :**
+   Le fichier `infrastructure/n8n/docker-compose.yml` déclare un volume externe nommé `n8n_data`. Vous devez le créer explicitement avant de démarrer le conteneur, sinon Docker refusera de se lancer.
+   ```bash
+   docker volume create n8n_data
+   ```
+
+2. **Démarrage du conteneur :**
+   ```bash
+   cd infrastructure/n8n
+   docker compose up -d
+   ```
+
+3. **Importation manuelle du workflow :**
+   Actuellement, le fichier JSON du workflow n'est pas importé automatiquement au démarrage du conteneur. Vous devez :
+   - Accéder à l'interface locale n8n (`http://localhost:5678`)
+   - Aller dans **Workflows** > **Add Workflow**
+   - Cliquer sur les options (menu en haut à droite) > **Import from File...**
+   - Sélectionner votre fichier local `workflows/n8n/whatsapp_pipeline.json`
+   - Configurer/Lier vos *Credentials* (Supabase, Gemini, etc.)
+   - Activer le workflow via le toggle en haut à droite.
+
+---
+
+## 9. Glossaire
 
 | Terme | Définition |
 |-------|------------|
@@ -652,7 +692,7 @@ Le JSON final produit par le pipeline suit ce schéma strict :
 
 ---
 
-## 9. Axes d'amélioration
+## 10. Axes d'amélioration
 
 Bien que le workflow actuel soit fonctionnel, plusieurs axes peuvent être envisagés pour accroître la maintenabilité, les performances et la résilience :
 
