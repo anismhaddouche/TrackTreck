@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark modern admin palette — applied unconditionally so the app reads as a
+       dark SaaS dashboard regardless of the user's OS preference. */
+    --background: 224 32% 7%;
+    --foreground: 210 40% 96%;
+
+    --card: 224 28% 10%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 224 28% 10%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 224 32% 7%;
+
+    --secondary: 222 24% 16%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 223 22% 14%;
+    --muted-foreground: 215 18% 65%;
+
+    --accent: 222 24% 16%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222 22% 18%;
+    --input: 222 22% 18%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.7rem;
+
+    color-scheme: dark;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    @apply min-h-screen bg-background text-foreground;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1,
+      "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-image:
+      radial-gradient(
+        80rem 40rem at 110% -10%,
+        hsl(217 91% 60% / 0.08),
+        transparent 60%
+      ),
+      radial-gradient(
+        60rem 30rem at -10% 110%,
+        hsl(280 80% 55% / 0.06),
+        transparent 60%
+      );
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
