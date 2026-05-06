@@ -39,3 +39,5 @@ Thumbs.db
 # Temp files
 .temp/
 tmp/
+
+.claude/
