@@ -131,7 +131,7 @@ function LoadingState() {
 
 function SourceTabs({ data }: { data: ResolvedSource }) {
   const initial = firstAvailableTab(data);
-  const hasText = Boolean(data.captionText);
+  const hasText = Boolean(data.captionText || data.captionError || data.textFiles.length);
   const hasImages = data.imageUrls.length > 0;
   const hasPdf = Boolean(data.pdfUrl);
 
@@ -170,6 +170,12 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
               {data.captionText}
             </pre>
           </ScrollArea>
+        ) : data.captionError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            tone="error"
+            title="Impossible de charger le texte source."
+          />
         ) : (
           <EmptyState
             icon={FileText}

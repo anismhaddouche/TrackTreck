@@ -22,6 +22,7 @@ export interface ResolvedSource {
   pdfPath: string | null;
   pdfName: string | null;
   captionText: string | null;
+  captionError: string | null;
   textFiles: ResolvedAsset[];
   probedPrefixes: string[];
   hasAny: boolean;
@@ -55,6 +56,7 @@ export function normalizeCountrySlug(country: string): string {
   const slug = slugify(country);
   if (slug === "egypt") return "egypte";
   if (slug === "turkey") return "turquie";
+  if (slug === "malaysia") return "malaisie";
   return slug;
 }
 
@@ -63,6 +65,14 @@ export function extractBucketPath(value: string): string | null {
   const markerIndex = value.indexOf(marker);
   if (markerIndex >= 0) {
     return cleanObjectPath(value.slice(markerIndex + marker.length));
+  }
+
+  const plainMarker = `${STORAGE_BUCKET}/`;
+  const plainMarkerIndex = value.indexOf(plainMarker);
+  if (plainMarkerIndex >= 0) {
+    return cleanObjectPath(
+      value.slice(plainMarkerIndex + plainMarker.length),
+    );
   }
 
   const encodedMarker = `/${encodeURIComponent(STORAGE_BUCKET)}/`;
@@ -121,6 +131,11 @@ function dirname(path: string): string | null {
   return parts.slice(0, -1).join("/");
 }
 
+function getParentPrefix(path: string): string | null {
+  const dir = dirname(path);
+  return dir ? `${dir}/` : null;
+}
+
 function basename(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
@@ -130,6 +145,18 @@ function addNumberedFolders(candidates: string[], prefix: string): void {
   candidates.push(prefix);
   candidates.push(`${prefix}/01`);
   candidates.push(`${prefix}/02`);
+}
+
+function addKnownSourceFolderVariants(
+  candidates: string[],
+  countrySlug: string | null,
+  titleSlug: string | null,
+): void {
+  if (!countrySlug || !titleSlug) return;
+
+  if (titleSlug.includes("kuala-lumpur")) {
+    addNumberedFolders(candidates, `${countrySlug}/kuala-lumpur-city-tour`);
+  }
 }
 
 function buildAnchors(photoUrls: string[] | null): {
@@ -146,7 +173,7 @@ function buildAnchors(photoUrls: string[] | null): {
     if (!path) continue;
     paths.push(path);
 
-    const folder = dirname(path);
+    const folder = getParentPrefix(path);
     if (folder) prefixes.push(folder);
 
     const parts = path.split("/").filter(Boolean);
@@ -179,6 +206,7 @@ function buildCandidatePrefixes(input: ResolveInput): string[] {
 
   if (countrySlug && titleSlug) {
     addNumberedFolders(candidates, `${countrySlug}/${titleSlug}`);
+    addKnownSourceFolderVariants(candidates, countrySlug, titleSlug);
   }
 
   if (countrySlug && agencySlug && !isDefaultAgencyName(input.agencyName)) {
@@ -199,6 +227,10 @@ function buildCandidatePrefixes(input: ResolveInput): string[] {
   return uniq(candidates);
 }
 
+function normalizePrefix(prefix: string): string {
+  return prefix.replace(/\/+$/, "");
+}
+
 interface ListedFile {
   prefix: string;
   name: string;
@@ -213,9 +245,10 @@ interface ListResult {
 
 async function listPrefix(prefix: string): Promise<ListResult> {
   const supabase = getSupabase();
+  const normalizedPrefix = normalizePrefix(prefix);
   const { data, error } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .list(prefix, {
+    .list(normalizedPrefix, {
       limit: LIST_LIMIT,
       sortBy: { column: "name", order: "asc" },
     });
@@ -226,12 +259,13 @@ async function listPrefix(prefix: string): Promise<ListResult> {
   const folders: string[] = [];
 
   for (const entry of data ?? []) {
-    const isFolder = entry.id === null && entry.metadata === null;
-    const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (isFolder) {
-      folders.push(fullPath);
+    const fullPath = normalizedPrefix
+      ? `${normalizedPrefix}/${entry.name}`
+      : entry.name;
+    if (classify(entry.name)) {
+      files.push({ prefix: normalizedPrefix, name: entry.name, fullPath });
     } else {
-      files.push({ prefix, name: entry.name, fullPath });
+      folders.push(fullPath);
     }
   }
 
@@ -269,6 +303,11 @@ async function resolveAssetUrl(path: string): Promise<string | null> {
 
   if (!error && data?.signedUrl) return data.signedUrl;
 
+  return getPublicAssetUrl(path);
+}
+
+function getPublicAssetUrl(path: string): string | null {
+  const supabase = getSupabase();
   const publicResult = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   return publicResult.data.publicUrl || null;
 }
@@ -279,20 +318,67 @@ async function downloadText(path: string, url: string | null): Promise<string | 
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .download(path);
-    if (!error && data) return await data.text();
+    if (!error && data) return formatTextContent(path, await data.text());
   } catch {
     // Try the resolved URL below.
   }
 
-  if (!url) return null;
+  const publicUrl = getPublicAssetUrl(path);
+  const urls = uniq([url ?? "", publicUrl ?? ""]);
+
+  for (const candidateUrl of urls) {
+    try {
+      const response = await fetch(candidateUrl);
+      if (!response.ok) continue;
+      return formatTextContent(path, await response.text());
+    } catch {
+      // Try the next URL candidate.
+    }
+  }
+
+  return null;
+}
+
+async function urlResponds(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (response.ok) return true;
+  } catch {
+    // Try a lightweight GET below.
+  }
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    return await response.text();
+    const response = await fetch(url, {
+      headers: { Range: "bytes=0-0" },
+    });
+    return response.ok;
   } catch {
-    return null;
+    return false;
   }
+}
+
+function formatTextContent(path: string, raw: string): string {
+  if (!/\.json$/i.test(path)) return raw;
+
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function textPriority(name: string): number {
+  if (/^caption\.txt$/i.test(name)) return 0;
+  if (/caption/i.test(name)) return 1;
+  if (/\.txt$/i.test(name)) return 2;
+  if (/\.md$/i.test(name)) return 3;
+  return 4;
+}
+
+function pdfPriority(name: string): number {
+  if (/^offer\.pdf$/i.test(name)) return 0;
+  if (/offer|source|brochure/i.test(name)) return 1;
+  return 2;
 }
 
 function addDirectAnchorFiles(input: ResolveInput, files: ListedFile[]): void {
@@ -307,6 +393,69 @@ function addDirectAnchorFiles(input: ResolveInput, files: ListedFile[]): void {
   }
 }
 
+async function findKnownSiblingTextFiles(
+  prefixes: string[],
+  existingPaths: Set<string>,
+): Promise<Array<{ file: ListedFile; text: string }>> {
+  const found: Array<{ file: ListedFile; text: string }> = [];
+
+  for (const rawPrefix of prefixes) {
+    const prefix = normalizePrefix(rawPrefix);
+    const path = `${prefix}/caption.txt`;
+    if (existingPaths.has(path)) continue;
+
+    const url = await resolveAssetUrl(path);
+    const text = await downloadText(path, url);
+    if (text === null) continue;
+
+    found.push({
+      file: {
+        prefix,
+        name: "caption.txt",
+        fullPath: path,
+      },
+      text,
+    });
+  }
+
+  return found;
+}
+
+function knownPdfSiblingNames(prefix: string): string[] {
+  const segment = basename(prefix);
+  return uniq([`${segment}.pdf`, "01.pdf", "source.pdf", "document.pdf", "offer.pdf"]);
+}
+
+async function findKnownSiblingPdfFiles(
+  prefixes: string[],
+  existingPaths: Set<string>,
+): Promise<Array<{ file: ListedFile; url: string }>> {
+  const found: Array<{ file: ListedFile; url: string }> = [];
+
+  for (const rawPrefix of prefixes) {
+    const prefix = normalizePrefix(rawPrefix);
+    for (const name of knownPdfSiblingNames(prefix)) {
+      const path = `${prefix}/${name}`;
+      if (existingPaths.has(path)) continue;
+
+      const url = await resolveAssetUrl(path);
+      if (!url || !(await urlResponds(url))) continue;
+
+      found.push({
+        file: {
+          prefix,
+          name,
+          fullPath: path,
+        },
+        url,
+      });
+      existingPaths.add(path);
+    }
+  }
+
+  return found;
+}
+
 export async function resolveOfferSource(
   input: ResolveInput,
 ): Promise<ResolvedSource> {
@@ -317,6 +466,7 @@ export async function resolveOfferSource(
     pdfPath: null,
     pdfName: null,
     captionText: null,
+    captionError: null,
     textFiles: [],
     probedPrefixes: [],
     hasAny: false,
@@ -344,7 +494,37 @@ export async function resolveOfferSource(
     }
   }
 
-  if (allFiles.length === 0) {
+  const byPath = new Map<string, ListedFile>();
+  for (const file of allFiles) {
+    if (!byPath.has(file.fullPath)) byPath.set(file.fullPath, file);
+  }
+
+  const anchors = buildAnchors(input.photoUrls);
+  const textContentByPath = new Map<string, string>();
+  const knownSiblingTexts = await findKnownSiblingTextFiles(
+    anchors.prefixes,
+    new Set(byPath.keys()),
+  );
+  for (const sibling of knownSiblingTexts) {
+    if (!byPath.has(sibling.file.fullPath)) {
+      byPath.set(sibling.file.fullPath, sibling.file);
+    }
+    textContentByPath.set(sibling.file.fullPath, sibling.text);
+  }
+
+  const pdfUrlByPath = new Map<string, string>();
+  const knownSiblingPdfs = await findKnownSiblingPdfFiles(
+    prefixes.length > 0 ? prefixes : anchors.prefixes,
+    new Set(byPath.keys()),
+  );
+  for (const sibling of knownSiblingPdfs) {
+    if (!byPath.has(sibling.file.fullPath)) {
+      byPath.set(sibling.file.fullPath, sibling.file);
+    }
+    pdfUrlByPath.set(sibling.file.fullPath, sibling.url);
+  }
+
+  if (byPath.size === 0) {
     if (blocked.value && !success.value) {
       return {
         ...empty,
@@ -355,11 +535,6 @@ export async function resolveOfferSource(
       };
     }
     return { ...empty, probedPrefixes: prefixes };
-  }
-
-  const byPath = new Map<string, ListedFile>();
-  for (const file of allFiles) {
-    if (!byPath.has(file.fullPath)) byPath.set(file.fullPath, file);
   }
 
   const images: ListedFile[] = [];
@@ -373,17 +548,23 @@ export async function resolveOfferSource(
     if (kind === "text") texts.push(file);
   }
 
+  images.sort((a, b) => a.name.localeCompare(b.name));
+  texts.sort((a, b) => textPriority(a.name) - textPriority(b.name));
+  pdfs.sort((a, b) => pdfPriority(a.name) - pdfPriority(b.name));
+
   const imageUrls = (
     await Promise.all(images.map((file) => resolveAssetUrl(file.fullPath)))
   ).filter((url): url is string => Boolean(url));
 
   const preferredPdf = pdfs[0] ?? null;
   const pdfUrl = preferredPdf
-    ? await resolveAssetUrl(preferredPdf.fullPath)
+    ? (pdfUrlByPath.get(preferredPdf.fullPath) ??
+      (await resolveAssetUrl(preferredPdf.fullPath)))
     : null;
 
   const textFiles: ResolvedAsset[] = [];
   let captionText: string | null = null;
+  let captionError: string | null = null;
   for (const textFile of texts) {
     const url = await resolveAssetUrl(textFile.fullPath);
     textFiles.push({
@@ -393,12 +574,20 @@ export async function resolveOfferSource(
       kind: "text",
     });
     if (!captionText) {
-      captionText = await downloadText(textFile.fullPath, url);
+      captionText =
+        textContentByPath.get(textFile.fullPath) ??
+        (await downloadText(textFile.fullPath, url));
+      if (!captionText) {
+        captionError = "Impossible de charger le texte source.";
+      }
     }
   }
 
   const hasAny =
-    imageUrls.length > 0 || pdfUrl !== null || (captionText?.length ?? 0) > 0;
+    imageUrls.length > 0 ||
+    pdfUrl !== null ||
+    texts.length > 0 ||
+    (captionText?.length ?? 0) > 0;
 
   if (!hasAny && blocked.value && !success.value) {
     return {
@@ -417,6 +606,7 @@ export async function resolveOfferSource(
     pdfPath: preferredPdf?.fullPath ?? null,
     pdfName: preferredPdf?.name ?? null,
     captionText,
+    captionError: captionText ? null : captionError,
     textFiles,
     probedPrefixes: prefixes,
     hasAny,
