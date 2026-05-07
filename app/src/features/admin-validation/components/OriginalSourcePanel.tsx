@@ -59,7 +59,7 @@ export function OriginalSourcePanel({
         photoUrls,
       }),
     // Signed URLs we issue are only valid for 5 minutes — don't keep stale ones.
-    staleTime: 60_000,
+    staleTime: 10 * 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -131,31 +131,34 @@ function LoadingState() {
 
 function SourceTabs({ data }: { data: ResolvedSource }) {
   const initial = firstAvailableTab(data);
+  const hasText = Boolean(data.captionText);
+  const hasImages = data.imageUrls.length > 0;
+  const hasPdf = Boolean(data.pdfUrl);
 
   return (
     <Tabs defaultValue={initial} className="flex flex-1 flex-col">
       <TabsList className="self-start">
-        <TabsTrigger value="text" disabled={!data.captionText} className="gap-1.5">
-          <FileText className="h-3.5 w-3.5" />
-          Texte
-        </TabsTrigger>
-        <TabsTrigger
-          value="image"
-          disabled={data.imageUrls.length === 0}
-          className="gap-1.5"
-        >
-          <ImageIcon className="h-3.5 w-3.5" />
-          Image
-          {data.imageUrls.length > 0 ? (
+        {hasText ? (
+          <TabsTrigger value="text" className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            Texte
+          </TabsTrigger>
+        ) : null}
+        {hasImages ? (
+          <TabsTrigger value="image" className="gap-1.5">
+            <ImageIcon className="h-3.5 w-3.5" />
+            Image
             <Badge variant="soft" className="ml-1 h-5 px-1.5 text-[10px]">
               {data.imageUrls.length}
             </Badge>
-          ) : null}
-        </TabsTrigger>
-        <TabsTrigger value="pdf" disabled={!data.pdfUrl} className="gap-1.5">
-          <FileText className="h-3.5 w-3.5" />
-          PDF
-        </TabsTrigger>
+          </TabsTrigger>
+        ) : null}
+        {hasPdf ? (
+          <TabsTrigger value="pdf" className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            PDF
+          </TabsTrigger>
+        ) : null}
       </TabsList>
 
       <Separator className="my-3" />

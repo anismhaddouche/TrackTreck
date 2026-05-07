@@ -61,9 +61,11 @@ export interface TourSummary {
   countries: string[] | null;
   agency_id: number | null;
   agency: Pick<Agency, "id" | "name"> | null;
+  sourceLabel: string | null;
   duration_nights: number | null;
   airline: string | null;
   lead_price: number | null;
+  photo_urls: string[] | null;
   status: OfferStatus | null;
   needs_review: boolean;
   created_at: string | null;
@@ -74,6 +76,7 @@ export interface TourDetail {
   title: string | null;
   agency_id: number | null;
   agency: Agency | null;
+  sourceLabel: string | null;
   countries: string[] | null;
   duration_nights: number | null;
   airline: string | null;

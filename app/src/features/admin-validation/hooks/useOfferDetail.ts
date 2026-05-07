@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSupabase } from "@/lib/supabase";
+import {
+  inferSourceLabelFromPhotoUrls,
+  isDefaultAgencyName,
+} from "@/lib/source-resolver";
 import type {
   Departure,
   HotelOption,
@@ -184,7 +188,12 @@ export function useOfferDetail(idParam: string | undefined) {
         return_flight_arrival_time: d.return_flight_arrival_time,
       }));
 
-      const agency = pickAgency(tour.agencies);
+      const rawAgency = pickAgency(tour.agencies);
+      const sourceLabel = inferSourceLabelFromPhotoUrls(tour.photo_urls);
+      const agency =
+        rawAgency && isDefaultAgencyName(rawAgency.name) && sourceLabel
+          ? { ...rawAgency, name: sourceLabel }
+          : rawAgency;
 
       const detail: TourDetail = {
         id: tour.id,
@@ -199,6 +208,7 @@ export function useOfferDetail(idParam: string | undefined) {
               town: agency.town,
             }
           : null,
+        sourceLabel,
         countries: tour.countries,
         duration_nights: tour.duration_nights,
         airline: tour.airline,

@@ -1,29 +1,6 @@
 import { getSupabase, STORAGE_BUCKET } from "./supabase";
 import { slugify } from "./utils";
 
-// Resolves source assets for an offer from the travel-offer-assets bucket.
-//
-// The pipeline uses different folder layouts over time. We probe several
-// prefixes in priority order and merge what we find. We deliberately avoid raw
-// <img src> for private buckets — every URL we return is a freshly signed URL.
-//
-// Supported layouts (probed in priority order):
-//   1. Spec / id-based:
-//        {country}/agency-{agency_id}/{offerId}/images/
-//        {country}/agency-{agency_id}/{offerId}/pdf/
-//        {country}/agency-{agency_id}/{offerId}/text/
-//   2. Slug / name-based (current real-world layout):
-//        {country}/{agency-slug}/{title-slug}/...
-//        {country}/{agency-slug}/...
-//   3. Older fallbacks:
-//        {country}/agency-{agency_id}/images/
-//        {country}/agency-{agency_id}/pdf/
-//        incoming/agency-{agency_id}/images/
-//        incoming/agency-{agency_id}/pdf/
-//
-// On listing failure (e.g. RLS blocks anon list), we surface a typed status so
-// the UI can show a clean message instead of a broken resource.
-
 export type ResolveStatus =
   | "ok"
   | "no-source"
@@ -59,17 +36,13 @@ interface ResolveInput {
   photoUrls: string[] | null;
 }
 
-const SIGNED_URL_TTL_SECONDS = 60 * 5;
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const MAX_RECURSION_DEPTH = 3;
 const LIST_LIMIT = 200;
 
-const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
+const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
 const PDF_EXT = /\.pdf$/i;
-const TEXT_EXT = /\.(txt|md|caption)$/i;
-
-const PUBLIC_OBJECT_PATTERN = new RegExp(
-  `/storage/v1/object/(?:public|sign)/${STORAGE_BUCKET}/([^?]+)`,
-);
+const TEXT_EXT = /\.(txt|json|md)$/i;
 
 function classify(name: string): ResolvedAsset["kind"] | null {
   if (IMAGE_EXT.test(name)) return "image";
@@ -78,67 +51,149 @@ function classify(name: string): ResolvedAsset["kind"] | null {
   return null;
 }
 
-function extractBucketPath(url: string): string | null {
-  const m = url.match(PUBLIC_OBJECT_PATTERN);
-  return m ? decodeURIComponent(m[1]) : null;
+export function normalizeCountrySlug(country: string): string {
+  const slug = slugify(country);
+  if (slug === "egypt") return "egypte";
+  if (slug === "turkey") return "turquie";
+  return slug;
+}
+
+export function extractBucketPath(value: string): string | null {
+  const marker = `/${STORAGE_BUCKET}/`;
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex >= 0) {
+    return cleanObjectPath(value.slice(markerIndex + marker.length));
+  }
+
+  const encodedMarker = `/${encodeURIComponent(STORAGE_BUCKET)}/`;
+  const encodedMarkerIndex = value.indexOf(encodedMarker);
+  if (encodedMarkerIndex >= 0) {
+    return cleanObjectPath(value.slice(encodedMarkerIndex + encodedMarker.length));
+  }
+
+  return null;
+}
+
+export function inferSourceLabelFromPhotoUrls(
+  photoUrls: string[] | null | undefined,
+): string | null {
+  for (const url of photoUrls ?? []) {
+    const path = extractBucketPath(url);
+    if (!path) continue;
+    const parts = path.split("/").filter(Boolean);
+    const candidate =
+      parts.length >= 3 ? parts[parts.length - 3] : parts.length >= 2 ? parts[1] : null;
+    const label = candidate ? labelFromSlug(candidate) : null;
+    if (label) return label;
+  }
+  return null;
+}
+
+export function isDefaultAgencyName(name: string | null | undefined): boolean {
+  return !name || name.trim().toLowerCase() === "default agency";
+}
+
+function cleanObjectPath(value: string): string | null {
+  const withoutHash = value.split("#")[0] ?? "";
+  const withoutQuery = withoutHash.split("?")[0] ?? "";
+  const decoded = decodeURIComponent(withoutQuery).replace(/^\/+/, "");
+  return decoded.length > 0 ? decoded : null;
+}
+
+function labelFromSlug(slug: string): string | null {
+  const words = slug
+    .split("-")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (words.length === 0) return null;
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function uniq(arr: string[]): string[] {
   return Array.from(new Set(arr.filter((s) => s && s.length > 0)));
 }
 
-// Build candidate prefixes ordered most-specific → most-permissive.
+function dirname(path: string): string | null {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return null;
+  return parts.slice(0, -1).join("/");
+}
+
+function basename(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function addNumberedFolders(candidates: string[], prefix: string): void {
+  candidates.push(prefix);
+  candidates.push(`${prefix}/01`);
+  candidates.push(`${prefix}/02`);
+}
+
+function buildAnchors(photoUrls: string[] | null): {
+  paths: string[];
+  prefixes: string[];
+  sourceSlug: string | null;
+} {
+  const paths: string[] = [];
+  const prefixes: string[] = [];
+  let sourceSlug: string | null = null;
+
+  for (const url of photoUrls ?? []) {
+    const path = extractBucketPath(url);
+    if (!path) continue;
+    paths.push(path);
+
+    const folder = dirname(path);
+    if (folder) prefixes.push(folder);
+
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length >= 3) sourceSlug = sourceSlug ?? parts[1];
+  }
+
+  return {
+    paths: uniq(paths),
+    prefixes: uniq(prefixes),
+    sourceSlug,
+  };
+}
+
 function buildCandidatePrefixes(input: ResolveInput): string[] {
   const candidates: string[] = [];
   const country = (input.countries ?? []).find(
     (c) => typeof c === "string" && c.trim().length > 0,
   );
-  const countrySlug = country ? slugify(country) : null;
+  const countrySlug = country ? normalizeCountrySlug(country) : null;
   const agencyId = input.agencyId;
   const agencySlug = input.agencyName ? slugify(input.agencyName) : null;
   const titleSlug = input.title ? slugify(input.title) : null;
-  const offerId = input.offerId;
+  const anchors = buildAnchors(input.photoUrls);
 
-  // 1) Anchors derived from photo_urls we already have. Most reliable when
-  // the n8n pipeline persisted at least one photo path.
-  for (const url of input.photoUrls ?? []) {
-    const path = extractBucketPath(url);
-    if (!path) continue;
-    const parts = path.split("/").filter(Boolean);
-    if (parts.length >= 2) candidates.push(parts.slice(0, -1).join("/"));
-    if (parts.length >= 3) candidates.push(parts.slice(0, -2).join("/"));
-    if (parts.length >= 4) candidates.push(parts.slice(0, -3).join("/"));
+  candidates.push(...anchors.prefixes);
+
+  if (countrySlug && anchors.sourceSlug) {
+    addNumberedFolders(candidates, `${countrySlug}/${anchors.sourceSlug}`);
   }
 
-  // 2) Spec / id-based layout.
+  if (countrySlug && titleSlug) {
+    addNumberedFolders(candidates, `${countrySlug}/${titleSlug}`);
+  }
+
+  if (countrySlug && agencySlug && !isDefaultAgencyName(input.agencyName)) {
+    addNumberedFolders(candidates, `${countrySlug}/${agencySlug}`);
+  }
+
   if (countrySlug && agencyId !== null) {
-    candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}`);
-    candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/images`);
-    candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/pdf`);
-    candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/text`);
     candidates.push(`${countrySlug}/agency-${agencyId}`);
     candidates.push(`${countrySlug}/agency-${agencyId}/images`);
     candidates.push(`${countrySlug}/agency-${agencyId}/pdf`);
   }
 
-  // 3) Slug / name-based layout. The agency slug and title slug let us hit
-  // {country}/{agency-slug}/{title-slug}/... directly when they exist.
-  if (countrySlug && agencySlug) {
-    if (titleSlug) {
-      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}`);
-      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/images`);
-      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/pdf`);
-      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/text`);
-    }
-    candidates.push(`${countrySlug}/${agencySlug}/${offerId}`);
-    candidates.push(`${countrySlug}/${agencySlug}`);
-  }
-
-  // 4) Older incoming/ fallbacks.
   if (agencyId !== null) {
     candidates.push(`incoming/agency-${agencyId}/images`);
     candidates.push(`incoming/agency-${agencyId}/pdf`);
-    candidates.push(`incoming/agency-${agencyId}`);
   }
 
   return uniq(candidates);
@@ -169,26 +224,20 @@ async function listPrefix(prefix: string): Promise<ListResult> {
 
   const files: ListedFile[] = [];
   const folders: string[] = [];
+
   for (const entry of data ?? []) {
-    // In supabase-js, folder placeholders have id=null and metadata=null.
-    const isFile = (entry.id ?? null) !== null || entry.metadata !== null;
-    if (isFile) {
-      files.push({
-        prefix,
-        name: entry.name,
-        fullPath: prefix ? `${prefix}/${entry.name}` : entry.name,
-      });
-    } else if (entry.name) {
-      folders.push(prefix ? `${prefix}/${entry.name}` : entry.name);
+    const isFolder = entry.id === null && entry.metadata === null;
+    const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (isFolder) {
+      folders.push(fullPath);
+    } else {
+      files.push({ prefix, name: entry.name, fullPath });
     }
   }
+
   return { files, folders, blocked: false };
 }
 
-// Recursively walk a prefix down to MAX_RECURSION_DEPTH, collecting every
-// file. Used when a probed prefix has no direct files but does contain
-// subfolders (typical for {country}/{agency-slug} where the offer lives in a
-// nested folder named after the publication or title).
 async function walkPrefix(
   prefix: string,
   depth: number,
@@ -197,45 +246,64 @@ async function walkPrefix(
   successFlag: { value: boolean },
 ): Promise<void> {
   if (depth > MAX_RECURSION_DEPTH) return;
+
   const result = await listPrefix(prefix);
   if (result.blocked) {
     blockedFlag.value = true;
     return;
   }
+
   successFlag.value = true;
   acc.push(...result.files);
-  if (result.files.length === 0 && result.folders.length > 0) {
-    for (const folder of result.folders) {
-      await walkPrefix(folder, depth + 1, acc, blockedFlag, successFlag);
-    }
+
+  for (const folder of result.folders) {
+    await walkPrefix(folder, depth + 1, acc, blockedFlag, successFlag);
   }
 }
 
-async function signMany(paths: string[]): Promise<Map<string, string>> {
-  if (paths.length === 0) return new Map();
+async function resolveAssetUrl(path: string): Promise<string | null> {
   const supabase = getSupabase();
   const { data, error } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
-  const out = new Map<string, string>();
-  if (error || !data) return out;
-  for (const item of data) {
-    if (item.signedUrl && item.path) out.set(item.path, item.signedUrl);
-  }
-  return out;
+  if (!error && data?.signedUrl) return data.signedUrl;
+
+  const publicResult = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return publicResult.data.publicUrl || null;
 }
 
-async function downloadText(path: string): Promise<string | null> {
+async function downloadText(path: string, url: string | null): Promise<string | null> {
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .download(path);
-    if (error || !data) return null;
-    return await data.text();
+    if (!error && data) return await data.text();
+  } catch {
+    // Try the resolved URL below.
+  }
+
+  if (!url) return null;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return await response.text();
   } catch {
     return null;
+  }
+}
+
+function addDirectAnchorFiles(input: ResolveInput, files: ListedFile[]): void {
+  for (const path of buildAnchors(input.photoUrls).paths) {
+    const kind = classify(path);
+    if (!kind) continue;
+    files.push({
+      prefix: dirname(path) ?? "",
+      name: basename(path),
+      fullPath: path,
+    });
   }
 }
 
@@ -255,19 +323,22 @@ export async function resolveOfferSource(
   };
 
   const prefixes = buildCandidatePrefixes(input);
-  if (prefixes.length === 0) return { ...empty, status: "no-anchor" };
-
   const allFiles: ListedFile[] = [];
   const blocked = { value: false };
   const success = { value: false };
 
+  addDirectAnchorFiles(input, allFiles);
+
+  if (prefixes.length === 0 && allFiles.length === 0) {
+    return { ...empty, status: "no-anchor" };
+  }
+
   for (const prefix of prefixes) {
     await walkPrefix(prefix, 0, allFiles, blocked, success);
-    // Short-circuit once we have enough material to render every tab.
     if (
       allFiles.some((f) => IMAGE_EXT.test(f.name)) &&
       allFiles.some((f) => PDF_EXT.test(f.name)) &&
-      allFiles.some((f) => TEXT_EXT.test(f.name) || /caption/i.test(f.name))
+      allFiles.some((f) => classify(f.name) === "text")
     ) {
       break;
     }
@@ -279,65 +350,65 @@ export async function resolveOfferSource(
         ...empty,
         status: "listing-blocked",
         message:
-          "Impossible de charger les fichiers sources. Vérifiez les politiques Storage ou les chemins des assets.",
+          "Impossible de charger les fichiers sources. Verifiez les politiques Storage ou les chemins des assets.",
         probedPrefixes: prefixes,
       };
     }
     return { ...empty, probedPrefixes: prefixes };
   }
 
-  // Deduplicate by fullPath.
   const byPath = new Map<string, ListedFile>();
-  for (const f of allFiles) {
-    if (!byPath.has(f.fullPath)) byPath.set(f.fullPath, f);
+  for (const file of allFiles) {
+    if (!byPath.has(file.fullPath)) byPath.set(file.fullPath, file);
   }
 
   const images: ListedFile[] = [];
   const pdfs: ListedFile[] = [];
   const texts: ListedFile[] = [];
 
-  for (const f of byPath.values()) {
-    const kind = classify(f.name);
-    if (kind === "image") images.push(f);
-    else if (kind === "pdf") pdfs.push(f);
-    else if (kind === "text") texts.push(f);
+  for (const file of byPath.values()) {
+    const kind = classify(file.name);
+    if (kind === "image") images.push(file);
+    if (kind === "pdf") pdfs.push(file);
+    if (kind === "text") texts.push(file);
   }
 
-  const signMapping = await signMany([
-    ...images.map((f) => f.fullPath),
-    ...pdfs.map((f) => f.fullPath),
-  ]);
+  const imageUrls = (
+    await Promise.all(images.map((file) => resolveAssetUrl(file.fullPath)))
+  ).filter((url): url is string => Boolean(url));
 
-  const imageUrls: string[] = [];
-  for (const f of images) {
-    const url = signMapping.get(f.fullPath);
-    if (url) imageUrls.push(url);
-  }
-
-  // Prefer a PDF whose name suggests it's the primary asset; otherwise the
-  // first one found.
-  const preferredPdf =
-    pdfs.find((p) => /caption|cover|main/i.test(p.name)) ?? pdfs[0] ?? null;
+  const preferredPdf = pdfs[0] ?? null;
   const pdfUrl = preferredPdf
-    ? (signMapping.get(preferredPdf.fullPath) ?? null)
+    ? await resolveAssetUrl(preferredPdf.fullPath)
     : null;
 
-  // For text we download the first match to render inline.
+  const textFiles: ResolvedAsset[] = [];
   let captionText: string | null = null;
-  for (const t of texts) {
-    captionText = await downloadText(t.fullPath);
-    if (captionText) break;
+  for (const textFile of texts) {
+    const url = await resolveAssetUrl(textFile.fullPath);
+    textFiles.push({
+      url: url ?? "",
+      path: textFile.fullPath,
+      name: textFile.name,
+      kind: "text",
+    });
+    if (!captionText) {
+      captionText = await downloadText(textFile.fullPath, url);
+    }
   }
-
-  const textAssets: ResolvedAsset[] = texts.map((t) => ({
-    url: "",
-    path: t.fullPath,
-    name: t.name,
-    kind: "text",
-  }));
 
   const hasAny =
     imageUrls.length > 0 || pdfUrl !== null || (captionText?.length ?? 0) > 0;
+
+  if (!hasAny && blocked.value && !success.value) {
+    return {
+      ...empty,
+      status: "listing-blocked",
+      message:
+        "Impossible de charger les fichiers sources. Verifiez les politiques Storage ou les chemins des assets.",
+      probedPrefixes: prefixes,
+    };
+  }
 
   return {
     status: hasAny ? "ok" : "no-source",
@@ -346,7 +417,7 @@ export async function resolveOfferSource(
     pdfPath: preferredPdf?.fullPath ?? null,
     pdfName: preferredPdf?.name ?? null,
     captionText,
-    textFiles: textAssets,
+    textFiles,
     probedPrefixes: prefixes,
     hasAny,
   };

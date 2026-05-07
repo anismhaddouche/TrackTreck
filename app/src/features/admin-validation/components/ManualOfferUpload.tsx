@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
 const ACCEPT = "image/*,application/pdf";
@@ -27,11 +26,10 @@ const ACCEPT = "image/*,application/pdf";
 export function ManualOfferUpload() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  const webhookUrl = env.n8nIngestionWebhookUrl;
-  const hasWebhook = webhookUrl.length > 0;
+  const hasWebhook = false;
 
   function handleFile(picked: File | null | undefined) {
     if (!picked) return;
@@ -46,30 +44,11 @@ export function ManualOfferUpload() {
     }
     if (!hasWebhook) {
       // TODO: wire this once the n8n manual-ingestion webhook is provisioned.
-      toast.info(
-        "VITE_N8N_INGESTION_WEBHOOK_URL is not configured. Cannot trigger extraction.",
-      );
+      toast.info("Endpoint d'extraction non configure.");
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file, file.name);
-      fd.append("source", "manual-admin-upload");
-
-      const res = await fetch(webhookUrl, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`Webhook responded with ${res.status}`);
-
-      toast.success("Upload sent to extraction pipeline.");
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed.";
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
+    toast.info("Endpoint d'extraction non configure.");
   }
 
   const FileIcon = file?.type.startsWith("image/")
@@ -157,9 +136,8 @@ export function ManualOfferUpload() {
           {!hasWebhook ? (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
               <strong>Pipeline endpoint not configured.</strong>{" "}
-              Set <code className="font-mono">VITE_N8N_INGESTION_WEBHOOK_URL</code>{" "}
-              in your <code className="font-mono">.env.local</code> to enable
-              manual triggers.
+              Configurez un endpoint cote serveur pour activer les declenchements
+              manuels.
             </div>
           ) : null}
 

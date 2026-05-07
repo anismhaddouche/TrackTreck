@@ -178,9 +178,9 @@ export function OfferValidationDetail() {
               )}
             </h1>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              {offer.agency?.name ? (
+              {offer.agency?.name || offer.sourceLabel ? (
                 <span className="font-medium text-foreground">
-                  {offer.agency.name}
+                  {offer.agency?.name ?? offer.sourceLabel}
                 </span>
               ) : (
                 <span className="italic">Agence inconnue</span>
@@ -285,7 +285,7 @@ export function OfferValidationDetail() {
         <OriginalSourcePanel
           offerId={offer.id}
           agencyId={offer.agency_id}
-          agencyName={offer.agency?.name ?? null}
+          agencyName={offer.agency?.name ?? offer.sourceLabel}
           title={offer.title}
           countries={offer.countries}
           photoUrls={offer.photo_urls}

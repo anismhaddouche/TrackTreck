@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSupabase } from "@/lib/supabase";
+import {
+  inferSourceLabelFromPhotoUrls,
+  isDefaultAgencyName,
+} from "@/lib/source-resolver";
 import type { TourSummary } from "@/lib/types";
 
 interface RawTourRow {
@@ -11,6 +15,7 @@ interface RawTourRow {
   duration_nights: number | null;
   airline: string | null;
   lead_price: number | null;
+  photo_urls: string[] | null;
   status: TourSummary["status"];
   needs_review: boolean;
   created_at: string | null;
@@ -34,7 +39,7 @@ export function useOffersToValidate() {
         .from("tours")
         .select(
           `id, title, countries, agency_id, duration_nights, airline,
-           lead_price, status, needs_review, created_at,
+           lead_price, photo_urls, status, needs_review, created_at,
            agencies:agency_id ( id, name )`,
         )
         .eq("needs_review", true)
@@ -76,15 +81,21 @@ export function useOffersToValidate() {
           const name = agencyFallback.get(row.agency_id);
           if (name) agency = { id: row.agency_id, name };
         }
+        const sourceLabel = inferSourceLabelFromPhotoUrls(row.photo_urls);
+        if (agency && isDefaultAgencyName(agency.name) && sourceLabel) {
+          agency = { ...agency, name: sourceLabel };
+        }
         return {
           id: row.id,
           title: row.title,
           countries: row.countries,
           agency_id: row.agency_id,
           agency,
+          sourceLabel,
           duration_nights: row.duration_nights,
           airline: row.airline,
           lead_price: row.lead_price,
+          photo_urls: row.photo_urls,
           status: row.status,
           needs_review: row.needs_review,
           created_at: row.created_at,

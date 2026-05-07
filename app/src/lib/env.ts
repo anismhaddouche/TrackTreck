@@ -4,8 +4,8 @@
 export const env = {
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL ?? "",
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? "",
-  n8nIngestionWebhookUrl:
-    import.meta.env.VITE_N8N_INGESTION_WEBHOOK_URL ?? "",
+  supabaseStorageBucket:
+    import.meta.env.VITE_SUPABASE_STORAGE_BUCKET ?? "travel-offer-assets",
 };
 
 export function getMissingEnvVars(): string[] {

@@ -16,4 +16,4 @@ export function getSupabase(): SupabaseClient {
   return _client;
 }
 
-export const STORAGE_BUCKET = "travel-offer-assets";
+export const STORAGE_BUCKET = env.supabaseStorageBucket || "travel-offer-assets";

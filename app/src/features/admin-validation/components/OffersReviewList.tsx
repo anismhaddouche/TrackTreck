@@ -226,7 +226,7 @@ export function OffersReviewList({
                     <CountryChips countries={offer.countries ?? []} />
                   </TableCell>
                   <TableCell className="text-sm">
-                    {offer.agency?.name ?? (
+                    {offer.agency?.name ?? offer.sourceLabel ?? (
                       <span className="italic text-muted-foreground">
                         Agence inconnue
                       </span>
