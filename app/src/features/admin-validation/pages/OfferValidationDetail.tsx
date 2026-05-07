@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
-  Ban,
   CheckCircle2,
   Download,
   Loader2,
@@ -18,8 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +32,6 @@ import { OfferStatusBadge } from "../components/OfferStatusBadge";
 import { useOfferDetail } from "../hooks/useOfferDetail";
 import {
   useDeleteOffer,
-  useRejectOffer,
   useSaveOffer,
   useValidateOffer,
 } from "../hooks/useOfferMutations";
@@ -55,13 +51,10 @@ export function OfferValidationDetail() {
   const { data, isLoading, isError, error } = useOfferDetail(id);
   const save = useSaveOffer();
   const validate = useValidateOffer();
-  const reject = useRejectOffer();
   const remove = useDeleteOffer();
 
   const [draft, setDraft] = useState<TourDetail | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmReject, setConfirmReject] = useState(false);
 
   useEffect(() => {
     if (data) setDraft(data);
@@ -72,8 +65,7 @@ export function OfferValidationDetail() {
     () => (data && offer ? JSON.stringify(offer) !== JSON.stringify(data) : false),
     [offer, data],
   );
-  const isBusy =
-    save.isPending || validate.isPending || reject.isPending || remove.isPending;
+  const isBusy = save.isPending || validate.isPending || remove.isPending;
 
   if (isLoading) {
     return (
@@ -89,14 +81,14 @@ export function OfferValidationDetail() {
         <Button asChild variant="ghost" size="sm">
           <Link to="/admin/validation">
             <ArrowLeft className="h-4 w-4" />
-            Back to list
+            Retour à la liste
           </Link>
         </Button>
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
             {error instanceof Error
               ? error.message
-              : "Could not load this offer."}
+              : "Impossible de charger cette offre."}
           </CardContent>
         </Card>
       </div>
@@ -107,9 +99,11 @@ export function OfferValidationDetail() {
     if (!offer) return;
     try {
       await save.mutateAsync(offer);
-      toast.success("Offer saved.");
+      toast.success("Corrections enregistrées.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed.");
+      toast.error(
+        err instanceof Error ? err.message : "Échec de l'enregistrement.",
+      );
     }
   }
 
@@ -118,26 +112,12 @@ export function OfferValidationDetail() {
     try {
       if (dirty) await save.mutateAsync(offer);
       await validate.mutateAsync(offer.id);
-      toast.success("Offer validated.");
+      toast.success("Offre validée.");
       navigate("/admin/validation");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Validation failed.");
-    }
-  }
-
-  async function handleReject() {
-    if (!offer) return;
-    try {
-      await reject.mutateAsync({
-        offerId: offer.id,
-        reason: rejectReason,
-      });
-      toast.success("Offer rejected.");
-      setConfirmReject(false);
-      setRejectReason("");
-      navigate("/admin/validation");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Reject failed.");
+      toast.error(
+        err instanceof Error ? err.message : "Échec de la validation.",
+      );
     }
   }
 
@@ -145,18 +125,20 @@ export function OfferValidationDetail() {
     if (!offer) return;
     try {
       await remove.mutateAsync(offer.id);
-      toast.success("Offer deleted.");
+      toast.success("Offre supprimée.");
       setConfirmDelete(false);
       navigate("/admin/validation");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Delete failed.");
+      toast.error(
+        err instanceof Error ? err.message : "Échec de la suppression.",
+      );
     }
   }
 
   function handleReset() {
     if (!data) return;
     setDraft(data);
-    toast.info("Changes discarded.");
+    toast.info("Modifications annulées.");
   }
 
   function handleDownload() {
@@ -166,17 +148,15 @@ export function OfferValidationDetail() {
 
   return (
     <div className="space-y-5">
-      {/* Top breadcrumb */}
       <div>
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link to="/admin/validation">
             <ArrowLeft className="h-4 w-4" />
-            Back to list
+            Retour à la liste
           </Link>
         </Button>
       </div>
 
-      {/* Header card */}
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-4 border-b bg-muted/40 p-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
@@ -184,14 +164,16 @@ export function OfferValidationDetail() {
               <Badge variant="soft">#{offer.id}</Badge>
               <OfferStatusBadge status={offer.status} />
               {offer.needs_review ? (
-                <Badge variant="warning">Needs review</Badge>
+                <Badge variant="warning">À vérifier</Badge>
               ) : null}
-              {dirty ? <Badge variant="info">Unsaved changes</Badge> : null}
+              {dirty ? (
+                <Badge variant="info">Modifications non enregistrées</Badge>
+              ) : null}
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-balance">
               {offer.title ?? (
                 <span className="italic text-muted-foreground">
-                  Untitled offer
+                  Offre sans titre
                 </span>
               )}
             </h1>
@@ -200,7 +182,9 @@ export function OfferValidationDetail() {
                 <span className="font-medium text-foreground">
                   {offer.agency.name}
                 </span>
-              ) : null}
+              ) : (
+                <span className="italic">Agence inconnue</span>
+              )}
               {(offer.countries ?? []).length > 0 ? (
                 <>
                   <span>·</span>
@@ -216,7 +200,7 @@ export function OfferValidationDetail() {
               {offer.duration_nights ? (
                 <>
                   <span>·</span>
-                  <span>{offer.duration_nights} nights</span>
+                  <span>{offer.duration_nights} nuits</span>
                 </>
               ) : null}
               {offer.airline ? (
@@ -230,7 +214,7 @@ export function OfferValidationDetail() {
 
           <div className="flex flex-col items-end gap-1">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              Lead price
+              Prix d'appel
             </span>
             <span className="text-2xl font-semibold tabular-nums">
               {formatPrice(offer.lead_price)}
@@ -238,7 +222,6 @@ export function OfferValidationDetail() {
           </div>
         </div>
 
-        {/* Action bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -248,11 +231,11 @@ export function OfferValidationDetail() {
               disabled={isBusy || !dirty}
             >
               <RotateCcw className="h-4 w-4" />
-              Reset
+              Réinitialiser
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="h-4 w-4" />
-              Download JSON
+              Télécharger le JSON
             </Button>
             <Button
               variant="outline"
@@ -265,7 +248,7 @@ export function OfferValidationDetail() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save corrections
+              Enregistrer les corrections
             </Button>
           </div>
 
@@ -273,23 +256,13 @@ export function OfferValidationDetail() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant="outline"
-              size="sm"
-              className="border-amber-300 text-amber-900 hover:bg-amber-50"
-              onClick={() => setConfirmReject(true)}
-              disabled={isBusy}
-            >
-              <Ban className="h-4 w-4" />
-              Reject
-            </Button>
-            <Button
               variant="destructive"
               size="sm"
               onClick={() => setConfirmDelete(true)}
               disabled={isBusy}
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              Supprimer
             </Button>
             <Button
               size="sm"
@@ -302,32 +275,34 @@ export function OfferValidationDetail() {
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}
-              Validate offer
+              Valider l'offre
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Split view */}
       <div className="grid gap-4 lg:grid-cols-2">
         <OriginalSourcePanel
           offerId={offer.id}
           agencyId={offer.agency_id}
+          agencyName={offer.agency?.name ?? null}
+          title={offer.title}
           countries={offer.countries}
           photoUrls={offer.photo_urls}
         />
 
         <Card className="flex h-full flex-col overflow-hidden">
           <div className="border-b bg-muted/40 p-4">
-            <h2 className="text-base font-semibold">Extracted data</h2>
+            <h2 className="text-base font-semibold">Données extraites</h2>
             <p className="text-sm text-muted-foreground">
-              Edit fields directly or tweak the JSON. Both views stay in sync.
+              Modifiez les champs directement ou ajustez le JSON. Les deux vues
+              restent synchronisées.
             </p>
           </div>
           <CardContent className="flex-1 p-4">
             <Tabs defaultValue="form" className="flex h-full flex-col">
               <TabsList className="self-start">
-                <TabsTrigger value="form">Form</TabsTrigger>
+                <TabsTrigger value="form">Formulaire</TabsTrigger>
                 <TabsTrigger value="json">JSON</TabsTrigger>
               </TabsList>
               <TabsContent value="form" className="mt-4 flex-1">
@@ -343,67 +318,21 @@ export function OfferValidationDetail() {
         </Card>
       </div>
 
-      {/* Reject confirmation */}
-      <AlertDialog open={confirmReject} onOpenChange={setConfirmReject}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Ban className="h-5 w-5 text-amber-600" />
-              Reject this offer?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The offer will be marked as <code>rejected</code> and removed from
-              the validation queue. Provide an optional reason for the audit
-              trail.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="reject-reason">Reason (optional)</Label>
-            <Textarea
-              id="reject-reason"
-              rows={3}
-              value={rejectReason}
-              placeholder="e.g. Duplicate offer, missing prices, unreadable source…"
-              onChange={(e) => setRejectReason(e.target.value)}
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleReject}
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "bg-amber-600 hover:bg-amber-700",
-              )}
-              disabled={reject.isPending}
-            >
-              {reject.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Ban className="h-4 w-4" />
-              )}
-              Reject offer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete confirmation */}
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Delete this offer permanently?
+              Supprimer définitivement cette offre ?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove offer <strong>#{offer.id}</strong> and its steps,
-              hotel options and departures from the database. This action cannot
-              be undone.
+              L'offre <strong>#{offer.id}</strong> ainsi que ses étapes,
+              options d'hôtels et départs seront supprimés de la base de
+              données. Cette action est irréversible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className={cn(buttonVariants({ variant: "destructive" }))}
@@ -414,7 +343,7 @@ export function OfferValidationDetail() {
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}
-              Delete offer
+              Supprimer l'offre
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

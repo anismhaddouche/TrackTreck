@@ -3,25 +3,23 @@ import { slugify } from "./utils";
 
 // Resolves source assets for an offer from the travel-offer-assets bucket.
 //
-// The pipeline uses different layouts over time. We probe several prefixes in
-// priority order and merge what we find. We deliberately avoid raw <img src>
-// for private buckets — every URL we return is a freshly signed URL.
+// The pipeline uses different folder layouts over time. We probe several
+// prefixes in priority order and merge what we find. We deliberately avoid raw
+// <img src> for private buckets — every URL we return is a freshly signed URL.
 //
-// New layout (current):
-//   {country}/{agency-slug}/{publicationId}/{publicationId}.jpg
-//   {country}/{agency-slug}/{publicationId}/{publicationId}.pdf
-//   {country}/{agency-slug}/{publicationId}/caption.txt
-//
-// Target layout per US_7 spec:
-//   {country}/agency-{agency_id}/{parsed_offer_id}/images/
-//   {country}/agency-{agency_id}/{parsed_offer_id}/pdf/
-//   {country}/agency-{agency_id}/{parsed_offer_id}/text/
-//
-// Older / fallback layouts:
-//   {country}/agency-{agency_id}/images/
-//   {country}/agency-{agency_id}/pdf/
-//   incoming/agency-{agency_id}/images/
-//   incoming/agency-{agency_id}/pdf/
+// Supported layouts (probed in priority order):
+//   1. Spec / id-based:
+//        {country}/agency-{agency_id}/{offerId}/images/
+//        {country}/agency-{agency_id}/{offerId}/pdf/
+//        {country}/agency-{agency_id}/{offerId}/text/
+//   2. Slug / name-based (current real-world layout):
+//        {country}/{agency-slug}/{title-slug}/...
+//        {country}/{agency-slug}/...
+//   3. Older fallbacks:
+//        {country}/agency-{agency_id}/images/
+//        {country}/agency-{agency_id}/pdf/
+//        incoming/agency-{agency_id}/images/
+//        incoming/agency-{agency_id}/pdf/
 //
 // On listing failure (e.g. RLS blocks anon list), we surface a typed status so
 // the UI can show a clean message instead of a broken resource.
@@ -55,11 +53,15 @@ export interface ResolvedSource {
 interface ResolveInput {
   offerId: number;
   agencyId: number | null;
+  agencyName?: string | null;
+  title?: string | null;
   countries: string[] | null;
   photoUrls: string[] | null;
 }
 
 const SIGNED_URL_TTL_SECONDS = 60 * 5;
+const MAX_RECURSION_DEPTH = 3;
+const LIST_LIMIT = 200;
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
 const PDF_EXT = /\.pdf$/i;
@@ -85,8 +87,7 @@ function uniq(arr: string[]): string[] {
   return Array.from(new Set(arr.filter((s) => s && s.length > 0)));
 }
 
-// Build the candidate prefixes we should probe, ordered from most specific to
-// most permissive. Anything we cannot derive is silently skipped.
+// Build candidate prefixes ordered most-specific → most-permissive.
 function buildCandidatePrefixes(input: ResolveInput): string[] {
   const candidates: string[] = [];
   const country = (input.countries ?? []).find(
@@ -94,38 +95,50 @@ function buildCandidatePrefixes(input: ResolveInput): string[] {
   );
   const countrySlug = country ? slugify(country) : null;
   const agencyId = input.agencyId;
+  const agencySlug = input.agencyName ? slugify(input.agencyName) : null;
+  const titleSlug = input.title ? slugify(input.title) : null;
   const offerId = input.offerId;
 
-  // 1) Anchors derived from photo_urls we already have.
+  // 1) Anchors derived from photo_urls we already have. Most reliable when
+  // the n8n pipeline persisted at least one photo path.
   for (const url of input.photoUrls ?? []) {
     const path = extractBucketPath(url);
     if (!path) continue;
     const parts = path.split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      // Folder containing the file we know about.
-      candidates.push(parts.slice(0, -1).join("/"));
-    }
-    if (parts.length >= 3) {
-      // One level up — sibling subfolders (images/, pdf/, text/).
-      candidates.push(parts.slice(0, -2).join("/"));
-    }
+    if (parts.length >= 2) candidates.push(parts.slice(0, -1).join("/"));
+    if (parts.length >= 3) candidates.push(parts.slice(0, -2).join("/"));
+    if (parts.length >= 4) candidates.push(parts.slice(0, -3).join("/"));
   }
 
+  // 2) Spec / id-based layout.
   if (countrySlug && agencyId !== null) {
-    // Spec layout: {country}/agency-{agency_id}/{offerId}/{images,pdf,text}
     candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}`);
     candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/images`);
     candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/pdf`);
     candidates.push(`${countrySlug}/agency-${agencyId}/${offerId}/text`);
-    // Older / fallback layouts under the same agency root.
     candidates.push(`${countrySlug}/agency-${agencyId}`);
     candidates.push(`${countrySlug}/agency-${agencyId}/images`);
     candidates.push(`${countrySlug}/agency-${agencyId}/pdf`);
   }
 
+  // 3) Slug / name-based layout. The agency slug and title slug let us hit
+  // {country}/{agency-slug}/{title-slug}/... directly when they exist.
+  if (countrySlug && agencySlug) {
+    if (titleSlug) {
+      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}`);
+      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/images`);
+      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/pdf`);
+      candidates.push(`${countrySlug}/${agencySlug}/${titleSlug}/text`);
+    }
+    candidates.push(`${countrySlug}/${agencySlug}/${offerId}`);
+    candidates.push(`${countrySlug}/${agencySlug}`);
+  }
+
+  // 4) Older incoming/ fallbacks.
   if (agencyId !== null) {
     candidates.push(`incoming/agency-${agencyId}/images`);
     candidates.push(`incoming/agency-${agencyId}/pdf`);
+    candidates.push(`incoming/agency-${agencyId}`);
   }
 
   return uniq(candidates);
@@ -137,36 +150,68 @@ interface ListedFile {
   fullPath: string;
 }
 
-async function listPrefix(
-  prefix: string,
-): Promise<{ files: ListedFile[]; blocked: boolean }> {
+interface ListResult {
+  files: ListedFile[];
+  folders: string[];
+  blocked: boolean;
+}
+
+async function listPrefix(prefix: string): Promise<ListResult> {
   const supabase = getSupabase();
   const { data, error } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .list(prefix, { limit: 100, sortBy: { column: "name", order: "asc" } });
+    .list(prefix, {
+      limit: LIST_LIMIT,
+      sortBy: { column: "name", order: "asc" },
+    });
 
-  if (error) {
-    // The supabase-js storage SDK surfaces RLS/policy problems through error.
-    return { files: [], blocked: true };
-  }
+  if (error) return { files: [], folders: [], blocked: true };
 
   const files: ListedFile[] = [];
+  const folders: string[] = [];
   for (const entry of data ?? []) {
-    // Folders surface as zero-byte placeholder rows; skip them.
+    // In supabase-js, folder placeholders have id=null and metadata=null.
     const isFile = (entry.id ?? null) !== null || entry.metadata !== null;
-    if (!isFile) continue;
-    files.push({
-      prefix,
-      name: entry.name,
-      fullPath: prefix ? `${prefix}/${entry.name}` : entry.name,
-    });
+    if (isFile) {
+      files.push({
+        prefix,
+        name: entry.name,
+        fullPath: prefix ? `${prefix}/${entry.name}` : entry.name,
+      });
+    } else if (entry.name) {
+      folders.push(prefix ? `${prefix}/${entry.name}` : entry.name);
+    }
   }
-  return { files, blocked: false };
+  return { files, folders, blocked: false };
 }
 
-async function signMany(
-  paths: string[],
-): Promise<Map<string, string>> {
+// Recursively walk a prefix down to MAX_RECURSION_DEPTH, collecting every
+// file. Used when a probed prefix has no direct files but does contain
+// subfolders (typical for {country}/{agency-slug} where the offer lives in a
+// nested folder named after the publication or title).
+async function walkPrefix(
+  prefix: string,
+  depth: number,
+  acc: ListedFile[],
+  blockedFlag: { value: boolean },
+  successFlag: { value: boolean },
+): Promise<void> {
+  if (depth > MAX_RECURSION_DEPTH) return;
+  const result = await listPrefix(prefix);
+  if (result.blocked) {
+    blockedFlag.value = true;
+    return;
+  }
+  successFlag.value = true;
+  acc.push(...result.files);
+  if (result.files.length === 0 && result.folders.length > 0) {
+    for (const folder of result.folders) {
+      await walkPrefix(folder, depth + 1, acc, blockedFlag, successFlag);
+    }
+  }
+}
+
+async function signMany(paths: string[]): Promise<Map<string, string>> {
   if (paths.length === 0) return new Map();
   const supabase = getSupabase();
   const { data, error } = await supabase.storage
@@ -176,9 +221,7 @@ async function signMany(
   const out = new Map<string, string>();
   if (error || !data) return out;
   for (const item of data) {
-    if (item.signedUrl && item.path) {
-      out.set(item.path, item.signedUrl);
-    }
+    if (item.signedUrl && item.path) out.set(item.path, item.signedUrl);
   }
   return out;
 }
@@ -212,33 +255,31 @@ export async function resolveOfferSource(
   };
 
   const prefixes = buildCandidatePrefixes(input);
-  if (prefixes.length === 0) {
-    return { ...empty, status: "no-anchor" };
-  }
+  if (prefixes.length === 0) return { ...empty, status: "no-anchor" };
 
   const allFiles: ListedFile[] = [];
-  let everBlocked = false;
-  let anySuccess = false;
+  const blocked = { value: false };
+  const success = { value: false };
 
-  // Sequential awaits keep this gentle on Supabase storage; the prefix list is
-  // small (<10) so it stays well under perceptible latency.
   for (const prefix of prefixes) {
-    const result = await listPrefix(prefix);
-    if (result.blocked) {
-      everBlocked = true;
-      continue;
+    await walkPrefix(prefix, 0, allFiles, blocked, success);
+    // Short-circuit once we have enough material to render every tab.
+    if (
+      allFiles.some((f) => IMAGE_EXT.test(f.name)) &&
+      allFiles.some((f) => PDF_EXT.test(f.name)) &&
+      allFiles.some((f) => TEXT_EXT.test(f.name) || /caption/i.test(f.name))
+    ) {
+      break;
     }
-    anySuccess = true;
-    allFiles.push(...result.files);
   }
 
   if (allFiles.length === 0) {
-    if (everBlocked && !anySuccess) {
+    if (blocked.value && !success.value) {
       return {
         ...empty,
         status: "listing-blocked",
         message:
-          "Source files could not be loaded. Check storage policies or asset path metadata.",
+          "Impossible de charger les fichiers sources. Vérifiez les politiques Storage ou les chemins des assets.",
         probedPrefixes: prefixes,
       };
     }
@@ -273,7 +314,7 @@ export async function resolveOfferSource(
     if (url) imageUrls.push(url);
   }
 
-  // Prefer a PDF whose name matches the publication anchor; otherwise the
+  // Prefer a PDF whose name suggests it's the primary asset; otherwise the
   // first one found.
   const preferredPdf =
     pdfs.find((p) => /caption|cover|main/i.test(p.name)) ?? pdfs[0] ?? null;

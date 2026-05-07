@@ -8,16 +8,16 @@ export function AdminValidationPage() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary/70">
-          Offer pipeline
+        <p className="text-xs font-medium uppercase tracking-wider text-primary/80">
+          Pipeline des offres
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-balance">
-          Validation queue
+          File de validation
         </h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Review extracted offers before they go live. Compare the original
-          source content with the structured data, fix anything off, then
-          validate, reject, or delete the draft.
+          Vérifiez les offres extraites avant leur mise en ligne. Comparez la
+          source originale avec les données structurées, corrigez ce qui doit
+          l'être, puis validez ou supprimez le brouillon.
         </p>
       </header>
 

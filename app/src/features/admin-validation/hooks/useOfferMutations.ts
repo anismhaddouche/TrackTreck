@@ -118,37 +118,6 @@ export function useValidateOffer() {
   });
 }
 
-// The `offer_status` enum already declares 'rejected' (see init migration), so
-// we can set it directly. If a future migration ever drops that value, the
-// update will fail loudly — preferable to silently leaving the row in 'draft'.
-export function useRejectOffer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (params: {
-      offerId: number;
-      reason?: string;
-    }): Promise<void> => {
-      const supabase = getSupabase();
-      const update: Record<string, unknown> = {
-        needs_review: false,
-        status: "rejected",
-      };
-      if (params.reason && params.reason.trim().length > 0) {
-        update.rejection_reason = params.reason.trim();
-      }
-      const { error } = await supabase
-        .from("tours")
-        .update(update)
-        .eq("id", params.offerId);
-      if (error) throw error;
-    },
-    onSuccess: (_data, { offerId }) => {
-      qc.invalidateQueries({ queryKey: ["offers", "detail", offerId] });
-      qc.invalidateQueries({ queryKey: ["offers", "to-validate"] });
-    },
-  });
-}
-
 // Hard-delete the tour. Schema declares `ON DELETE CASCADE` on tour_steps and
 // departures (and hotel_options cascade off tour_steps), so a single delete
 // here cleans up the whole subtree. We do NOT touch storage assets — they are

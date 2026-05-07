@@ -32,6 +32,8 @@ import type { ResolvedSource } from "@/lib/source-resolver";
 interface OriginalSourcePanelProps {
   offerId: number;
   agencyId: number | null;
+  agencyName: string | null;
+  title: string | null;
   countries: string[] | null;
   photoUrls: string[] | null;
 }
@@ -39,14 +41,23 @@ interface OriginalSourcePanelProps {
 export function OriginalSourcePanel({
   offerId,
   agencyId,
+  agencyName,
+  title,
   countries,
   photoUrls,
 }: OriginalSourcePanelProps) {
   const photoKey = (photoUrls ?? []).join("|");
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["offer-source", offerId, agencyId, photoKey],
+    queryKey: ["offer-source", offerId, agencyId, agencyName, title, photoKey],
     queryFn: () =>
-      resolveOfferSource({ offerId, agencyId, countries, photoUrls }),
+      resolveOfferSource({
+        offerId,
+        agencyId,
+        agencyName,
+        title,
+        countries,
+        photoUrls,
+      }),
     // Signed URLs we issue are only valid for 5 minutes — don't keep stale ones.
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -57,19 +68,19 @@ export function OriginalSourcePanel({
       <CardHeader className="space-y-1 border-b bg-muted/40 pb-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-semibold">
-            Original source
+            Source originale
           </CardTitle>
           {data?.status === "ok" ? (
-            <Badge variant="success">Loaded</Badge>
+            <Badge variant="success">Chargée</Badge>
           ) : data?.status === "listing-blocked" ? (
             <Badge variant="warning" className="gap-1">
               <Lock className="h-3 w-3" />
-              Restricted
+              Restreint
             </Badge>
           ) : null}
         </div>
         <CardDescription>
-          Raw content received through the WhatsApp pipeline.
+          Contenu brut reçu via le pipeline WhatsApp.
         </CardDescription>
       </CardHeader>
 
@@ -80,22 +91,22 @@ export function OriginalSourcePanel({
           <EmptyState
             icon={AlertTriangle}
             tone="error"
-            title="Could not load source files"
-            description="Storage might be unreachable or the offer has no associated assets."
+            title="Impossible de charger les fichiers sources"
+            description="Le stockage est peut-être inaccessible ou aucune ressource n'est associée à cette offre."
           />
         ) : data.status === "listing-blocked" ? (
           <EmptyState
             icon={Lock}
             tone="warning"
-            title="Source files could not be loaded"
-            description="Check storage policies or asset path metadata. The anon role may not have read access to this prefix."
+            title="Impossible de charger les fichiers sources"
+            description="Vérifiez les politiques Storage ou les chemins des assets. Le rôle anon n'a peut-être pas accès en lecture à ce préfixe."
           />
         ) : data.status === "no-anchor" || !data.hasAny ? (
           <EmptyState
             icon={Inbox}
             tone="muted"
-            title="No original source available"
-            description="No image, PDF or caption was found in the storage bucket for this offer."
+            title="Aucune source originale trouvée pour cette offre."
+            description="Aucune image, PDF ou légende n'a été trouvée dans le bucket Storage pour cette offre."
           />
         ) : (
           <SourceTabs data={data} />
@@ -110,7 +121,7 @@ function LoadingState() {
     <div className="flex flex-1 flex-col gap-3">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Resolving source files…
+        Résolution des fichiers sources…
       </div>
       <Skeleton className="h-10 w-64" />
       <Skeleton className="h-[55vh] w-full" />
@@ -126,7 +137,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
       <TabsList className="self-start">
         <TabsTrigger value="text" disabled={!data.captionText} className="gap-1.5">
           <FileText className="h-3.5 w-3.5" />
-          Text
+          Texte
         </TabsTrigger>
         <TabsTrigger
           value="image"
@@ -160,7 +171,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
           <EmptyState
             icon={FileText}
             tone="muted"
-            title="No text caption found"
+            title="Aucune légende texte trouvée"
           />
         )}
       </TabsContent>
@@ -178,7 +189,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
           <EmptyState
             icon={ImageOff}
             tone="muted"
-            title="No image found"
+            title="Aucune image trouvée"
           />
         )}
       </TabsContent>
@@ -190,7 +201,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
               <Button asChild variant="outline" size="sm">
                 <a href={data.pdfUrl} target="_blank" rel="noreferrer">
                   <ExternalLink className="h-3.5 w-3.5" />
-                  Open PDF
+                  Ouvrir le PDF
                 </a>
               </Button>
               <Button asChild variant="outline" size="sm">
@@ -201,7 +212,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
                   rel="noreferrer"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Download
+                  Télécharger le PDF
                 </a>
               </Button>
               {data.pdfName ? (
@@ -212,7 +223,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
             </div>
             <iframe
               src={data.pdfUrl}
-              title="Original PDF source"
+              title="PDF source original"
               className="h-[55vh] w-full rounded-md border bg-background"
             />
           </div>
@@ -220,7 +231,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
           <EmptyState
             icon={FileText}
             tone="muted"
-            title="No PDF found"
+            title="Aucun PDF trouvé"
           />
         )}
       </TabsContent>
@@ -228,8 +239,6 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
   );
 }
 
-// Pre-loads the image to avoid showing a broken-image icon in the UI when the
-// signed URL has expired or the asset has been deleted.
 function ImagePreview({ url, index }: { url: string; index: number }) {
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
 
@@ -248,7 +257,8 @@ function ImagePreview({ url, index }: { url: string; index: number }) {
     return (
       <div className="flex items-center gap-3 rounded-md border bg-background p-3 text-xs text-muted-foreground">
         <ImageOff className="h-4 w-4 text-amber-500" />
-        Image #{index} could not be loaded (it may have expired or been removed).
+        L'image n°{index} n'a pas pu être chargée (URL expirée ou ressource
+        supprimée).
       </div>
     );
   }
@@ -267,7 +277,7 @@ function ImagePreview({ url, index }: { url: string; index: number }) {
       ) : (
         <img
           src={url}
-          alt={`Original offer source #${index}`}
+          alt={`Source originale n°${index}`}
           className="h-auto w-full object-contain"
           loading="lazy"
         />
@@ -296,10 +306,10 @@ function EmptyState({
 }) {
   const toneClass =
     tone === "warning"
-      ? "border-amber-300 bg-amber-50/60 text-amber-900"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
       : tone === "error"
-        ? "border-destructive/50 bg-destructive/5 text-destructive"
-        : "border-dashed border-slate-300 bg-muted/30 text-foreground";
+        ? "border-destructive/50 bg-destructive/10 text-destructive"
+        : "border-dashed border-border bg-muted/30 text-foreground";
 
   return (
     <div

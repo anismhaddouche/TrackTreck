@@ -44,6 +44,7 @@ import {
 import { OfferStatusBadge } from "./OfferStatusBadge";
 
 import { formatDate, formatPrice } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { TourSummary } from "@/lib/types";
 
 interface OffersReviewListProps {
@@ -99,23 +100,23 @@ export function OffersReviewList({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <CardTitle className="text-base font-semibold">
-              Offers waiting for validation
+              Offres en attente de validation
             </CardTitle>
             <CardDescription>
-              Drafts extracted by the pipeline. Review, correct, then validate
-              or reject.
+              Brouillons extraits par le pipeline. Vérifiez, corrigez puis
+              validez ou supprimez.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatChip
               icon={Inbox}
-              label="Awaiting"
+              label="En attente"
               value={totalReviewable}
               tone="warning"
             />
             <StatChip
               icon={Filter}
-              label="Shown"
+              label="Affichées"
               value={totalShown}
               tone="default"
             />
@@ -126,7 +127,7 @@ export function OffersReviewList({
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by title…"
+              placeholder="Rechercher par titre…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -134,10 +135,10 @@ export function OffersReviewList({
           </div>
           <Select value={country} onValueChange={setCountry}>
             <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Country" />
+              <SelectValue placeholder="Pays" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All countries</SelectItem>
+              <SelectItem value="all">Tous les pays</SelectItem>
               {countries.map((c) => (
                 <SelectItem key={c} value={c}>
                   {c}
@@ -147,10 +148,10 @@ export function OffersReviewList({
           </Select>
           <Select value={agencyId} onValueChange={setAgencyId}>
             <SelectTrigger className="w-full sm:w-[200px]">
-              <SelectValue placeholder="Agency" />
+              <SelectValue placeholder="Agence" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All agencies</SelectItem>
+              <SelectItem value="all">Toutes les agences</SelectItem>
               {agencies.map((a) => (
                 <SelectItem key={a.id} value={String(a.id)}>
                   {a.name}
@@ -164,21 +165,21 @@ export function OffersReviewList({
       <CardContent className="p-0">
         {isError ? (
           <div className="m-4 rounded-md border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
-            {errorMessage ?? "Could not load offers."}
+            {errorMessage ?? "Impossible de charger les offres."}
           </div>
         ) : null}
 
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[28%]">Offer</TableHead>
-              <TableHead>Countries</TableHead>
-              <TableHead>Agency</TableHead>
-              <TableHead className="text-right">Nights</TableHead>
-              <TableHead>Airline</TableHead>
-              <TableHead className="text-right">From</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
+              <TableHead className="w-[28%]">Offre</TableHead>
+              <TableHead>Pays</TableHead>
+              <TableHead>Agence</TableHead>
+              <TableHead className="text-right">Nuits</TableHead>
+              <TableHead>Compagnie</TableHead>
+              <TableHead className="text-right">À partir de</TableHead>
+              <TableHead>Statut</TableHead>
+              <TableHead>Créée le</TableHead>
               <TableHead className="w-[1%] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -205,7 +206,6 @@ export function OffersReviewList({
                   key={offer.id}
                   className="group cursor-pointer"
                   onClick={(e) => {
-                    // Only navigate when the click was not on an interactive child.
                     if ((e.target as HTMLElement).closest("a,button")) return;
                     navigate(`/admin/validation/${offer.id}`);
                   }}
@@ -214,7 +214,7 @@ export function OffersReviewList({
                     <div className="flex flex-col">
                       <span className="truncate font-medium">
                         {offer.title ?? (
-                          <em className="text-muted-foreground">untitled</em>
+                          <em className="text-muted-foreground">sans titre</em>
                         )}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -226,7 +226,11 @@ export function OffersReviewList({
                     <CountryChips countries={offer.countries ?? []} />
                   </TableCell>
                   <TableCell className="text-sm">
-                    {offer.agency?.name ?? "—"}
+                    {offer.agency?.name ?? (
+                      <span className="italic text-muted-foreground">
+                        Agence inconnue
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {offer.duration_nights ?? "—"}
@@ -248,7 +252,7 @@ export function OffersReviewList({
                     <div className="flex flex-wrap gap-1">
                       <OfferStatusBadge status={offer.status} />
                       {offer.needs_review ? (
-                        <Badge variant="warning">Needs review</Badge>
+                        <Badge variant="warning">À vérifier</Badge>
                       ) : null}
                     </div>
                   </TableCell>
@@ -265,7 +269,7 @@ export function OffersReviewList({
                       className="opacity-90 transition-opacity group-hover:opacity-100"
                     >
                       <Link to={`/admin/validation/${offer.id}`}>
-                        Review
+                        Vérifier
                         <ArrowRight className="h-4 w-4" />
                       </Link>
                     </Button>
@@ -318,13 +322,14 @@ function StatChip({
   value: number;
   tone: "default" | "warning";
 }) {
-  const toneClasses =
-    tone === "warning"
-      ? "border-amber-200 bg-amber-50 text-amber-900"
-      : "border-slate-200 bg-white text-foreground";
   return (
     <div
-      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium shadow-sm ${toneClasses}`}
+      className={cn(
+        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+        tone === "warning"
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+          : "border-border bg-card text-foreground/80",
+      )}
     >
       <Icon className="h-3.5 w-3.5" />
       <span className="text-muted-foreground">{label}</span>
@@ -340,12 +345,14 @@ function ListEmptyState({ hasAny }: { hasAny: boolean }) {
         <PackageOpen className="h-6 w-6 text-muted-foreground" />
       </div>
       <p className="text-sm font-medium">
-        {hasAny ? "No offers match the current filters" : "Nothing to validate"}
+        {hasAny
+          ? "Aucune offre ne correspond aux filtres actuels"
+          : "Rien à valider"}
       </p>
       <p className="max-w-md text-xs text-muted-foreground">
         {hasAny
-          ? "Try clearing the filters or widening your search."
-          : "Once the WhatsApp pipeline extracts new offers, they will land here as drafts awaiting review."}
+          ? "Essayez d'effacer les filtres ou d'élargir votre recherche."
+          : "Dès que le pipeline WhatsApp extraira de nouvelles offres, elles apparaîtront ici en tant que brouillons à vérifier."}
       </p>
     </div>
   );

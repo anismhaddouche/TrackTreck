@@ -42,20 +42,54 @@ export function useOffersToValidate() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+      const rows = (data ?? []) as RawTourRow[];
 
-      return (data as RawTourRow[]).map((row) => ({
-        id: row.id,
-        title: row.title,
-        countries: row.countries,
-        agency_id: row.agency_id,
-        agency: pickAgency(row.agencies),
-        duration_nights: row.duration_nights,
-        airline: row.airline,
-        lead_price: row.lead_price,
-        status: row.status,
-        needs_review: row.needs_review,
-        created_at: row.created_at,
-      }));
+      // Fallback: when the embedded join returns null for some rows (RLS,
+      // missing FK rows, etc.), batch-fetch the agency names by id so the
+      // table can show real names instead of "Agence inconnue" everywhere.
+      const missingAgencyIds = Array.from(
+        new Set(
+          rows
+            .filter(
+              (r) => r.agency_id !== null && pickAgency(r.agencies) === null,
+            )
+            .map((r) => r.agency_id as number),
+        ),
+      );
+
+      const agencyFallback = new Map<number, string>();
+      if (missingAgencyIds.length > 0) {
+        const { data: agencyRows, error: agencyErr } = await supabase
+          .from("agencies")
+          .select("id, name")
+          .in("id", missingAgencyIds);
+        if (!agencyErr && agencyRows) {
+          for (const a of agencyRows as Array<{ id: number; name: string }>) {
+            agencyFallback.set(a.id, a.name);
+          }
+        }
+      }
+
+      return rows.map((row) => {
+        let agency = pickAgency(row.agencies);
+        if (!agency && row.agency_id !== null) {
+          const name = agencyFallback.get(row.agency_id);
+          if (name) agency = { id: row.agency_id, name };
+        }
+        return {
+          id: row.id,
+          title: row.title,
+          countries: row.countries,
+          agency_id: row.agency_id,
+          agency,
+          duration_nights: row.duration_nights,
+          airline: row.airline,
+          lead_price: row.lead_price,
+          status: row.status,
+          needs_review: row.needs_review,
+          created_at: row.created_at,
+        };
+      });
     },
   });
 }
