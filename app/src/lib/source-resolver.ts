@@ -502,7 +502,7 @@ export async function resolveOfferSource(
   const anchors = buildAnchors(input.photoUrls);
   const textContentByPath = new Map<string, string>();
   const knownSiblingTexts = await findKnownSiblingTextFiles(
-    anchors.prefixes,
+    prefixes.length > 0 ? prefixes : anchors.prefixes,
     new Set(byPath.keys()),
   );
   for (const sibling of knownSiblingTexts) {

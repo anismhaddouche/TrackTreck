@@ -6,6 +6,7 @@ export const env = {
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? "",
   supabaseStorageBucket:
     import.meta.env.VITE_SUPABASE_STORAGE_BUCKET ?? "travel-offer-assets",
+  pipelineWebhookUrl: import.meta.env.VITE_N8N_INGESTION_WEBHOOK_URL ?? "",
 };
 
 export function getMissingEnvVars(): string[] {
