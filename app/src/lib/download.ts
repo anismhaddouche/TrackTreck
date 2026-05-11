@@ -17,6 +17,7 @@ export function buildOfferJson(offer: TourDetail): Record<string, unknown> {
     is_global_pricing: offer.is_global_pricing ?? false,
     global_pricing: offer.global_pricing,
     lead_price: offer.lead_price,
+    commission_amount: offer.commission_amount,
     services: offer.services ?? { included: [], excluded: [] },
     needs_review: offer.needs_review,
     steps: offer.steps,

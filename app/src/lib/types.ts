@@ -87,6 +87,7 @@ export interface TourDetail {
   is_global_pricing: boolean | null;
   global_pricing: number | null;
   lead_price: number | null;
+  commission_amount: number | null;
   services: OfferServices | null;
   needs_review: boolean;
   created_at: string | null;

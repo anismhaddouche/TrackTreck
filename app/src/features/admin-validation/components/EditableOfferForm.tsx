@@ -11,7 +11,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
+import { useAgencies, type AgencyOption } from "../hooks/useAgencies";
+import { useAirlines, type AirlineOption } from "../hooks/useAirlines";
 import type {
   Departure,
   HotelOption,
@@ -72,8 +81,31 @@ function parseNumberOrNull(raw: string): number | null {
 }
 
 export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
+  const agenciesQuery = useAgencies();
+  const airlinesQuery = useAirlines();
+
   function update<K extends keyof TourDetail>(key: K, value: TourDetail[K]) {
     onChange({ ...offer, [key]: value });
+  }
+
+  function selectAgency(agencyId: number | null) {
+    const picked =
+      agencyId !== null
+        ? agenciesQuery.data?.find((a) => a.id === agencyId) ?? null
+        : null;
+    onChange({
+      ...offer,
+      agency_id: agencyId,
+      agency: picked
+        ? {
+            id: picked.id,
+            name: picked.name,
+            email: picked.email,
+            phone: picked.phone,
+            town: offer.agency?.town ?? null,
+          }
+        : null,
+    });
   }
 
   function updateStep(idx: number, next: TourStep) {
@@ -126,10 +158,19 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               value={offer.title ?? ""}
               onChange={(v) => update("title", v || null)}
             />
-            <FieldText
-              label="Airline"
-              value={offer.airline ?? ""}
-              onChange={(v) => update("airline", v || null)}
+            <AgencyField
+              currentId={offer.agency_id}
+              agencies={agenciesQuery.data ?? []}
+              isLoading={agenciesQuery.isLoading}
+              isError={agenciesQuery.isError}
+              onSelect={selectAgency}
+            />
+            <AirlineField
+              currentName={offer.airline}
+              airlines={airlinesQuery.data ?? []}
+              isLoading={airlinesQuery.isLoading}
+              isError={airlinesQuery.isError}
+              onSelect={(name) => update("airline", name)}
             />
             <FieldText
               label="Countries (comma-separated)"
@@ -158,6 +199,13 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               label="Global pricing"
               value={offer.global_pricing}
               onChange={(v) => update("global_pricing", v)}
+            />
+            <FieldNumber
+              label="Commission"
+              value={offer.commission_amount}
+              onChange={(v) => update("commission_amount", v)}
+              placeholder="Ex : 10000"
+              unit="DA"
             />
             <div className="flex items-end gap-2">
               <input
@@ -269,6 +317,128 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
   );
 }
 
+function AirlineField({
+  currentName,
+  airlines,
+  isLoading,
+  isError,
+  onSelect,
+}: {
+  currentName: string | null;
+  airlines: AirlineOption[];
+  isLoading: boolean;
+  isError: boolean;
+  onSelect: (name: string | null) => void;
+}) {
+  const trimmed = (currentName ?? "").trim();
+  const known = trimmed
+    ? airlines.some((a) => a.name === trimmed)
+    : false;
+  const value = trimmed && known ? trimmed : undefined;
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Compagnie aérienne</Label>
+      {isError ? (
+        <p className="text-xs text-destructive">
+          Impossible de charger les compagnies aériennes.
+        </p>
+      ) : isLoading ? (
+        <p className="text-xs text-muted-foreground">
+          Chargement des compagnies...
+        </p>
+      ) : airlines.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Aucune compagnie disponible
+        </p>
+      ) : (
+        <Select
+          value={value}
+          onValueChange={(v) => onSelect(v ? v : null)}
+        >
+          <SelectTrigger>
+            <SelectValue
+              placeholder={
+                trimmed && !known
+                  ? `Compagnie non reconnue : ${trimmed}`
+                  : "Sélectionner une compagnie"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {airlines.map((a) => (
+              <SelectItem key={a.id} value={a.name}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
+
+function AgencyField({
+  currentId,
+  agencies,
+  isLoading,
+  isError,
+  onSelect,
+}: {
+  currentId: number | null;
+  agencies: AgencyOption[];
+  isLoading: boolean;
+  isError: boolean;
+  onSelect: (id: number | null) => void;
+}) {
+  const known = currentId !== null
+    ? agencies.some((a) => a.id === currentId)
+    : false;
+  const value =
+    currentId !== null && known ? String(currentId) : undefined;
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Agence</Label>
+      {isError ? (
+        <p className="text-xs text-destructive">
+          Impossible de charger les agences.
+        </p>
+      ) : isLoading ? (
+        <p className="text-xs text-muted-foreground">
+          Chargement des agences...
+        </p>
+      ) : agencies.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Aucune agence disponible
+        </p>
+      ) : (
+        <Select
+          value={value}
+          onValueChange={(v) => onSelect(v ? Number(v) : null)}
+        >
+          <SelectTrigger>
+            <SelectValue
+              placeholder={
+                currentId !== null && !known
+                  ? "Agence inconnue"
+                  : "Sélectionner une agence"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {agencies.map((a) => (
+              <SelectItem key={a.id} value={String(a.id)}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
+
 function FieldText({
   label,
   value,
@@ -290,19 +460,35 @@ function FieldNumber({
   label,
   value,
   onChange,
+  placeholder,
+  unit,
 }: {
   label: string;
   value: number | null | undefined;
   onChange: (v: number | null) => void;
+  placeholder?: string;
+  unit?: string;
 }) {
+  const input = (
+    <Input
+      type="number"
+      inputMode="numeric"
+      placeholder={placeholder}
+      value={value ?? ""}
+      onChange={(e) => onChange(parseNumberOrNull(e.target.value))}
+    />
+  );
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Input
-        type="number"
-        value={value ?? ""}
-        onChange={(e) => onChange(parseNumberOrNull(e.target.value))}
-      />
+      {unit ? (
+        <div className="flex items-center gap-2">
+          <div className="flex-1">{input}</div>
+          <span className="text-sm text-muted-foreground">{unit}</span>
+        </div>
+      ) : (
+        input
+      )}
     </div>
   );
 }

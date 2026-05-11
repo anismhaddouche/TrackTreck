@@ -14,6 +14,8 @@ async function persistOffer(offer: TourDetail): Promise<void> {
     .from("tours")
     .update({
       title: offer.title,
+      agency_id: offer.agency_id,
+      status: "pending_review",
       countries: offer.countries,
       duration_nights: offer.duration_nights,
       airline: offer.airline,
@@ -23,6 +25,7 @@ async function persistOffer(offer: TourDetail): Promise<void> {
       is_global_pricing: offer.is_global_pricing ?? false,
       global_pricing: offer.global_pricing,
       lead_price: offer.lead_price,
+      commission_amount: offer.commission_amount,
       services: offer.services ?? { included: [], excluded: [] },
     })
     .eq("id", offer.id);
@@ -104,10 +107,9 @@ export function useValidateOffer() {
   return useMutation({
     mutationFn: async (offerId: number): Promise<void> => {
       const supabase = getSupabase();
-      // The `offer_status` enum exposes `pending_review` — safe to use here.
       const { error } = await supabase
         .from("tours")
-        .update({ needs_review: false, status: "pending_review" })
+        .update({ needs_review: false, status: "published" })
         .eq("id", offerId);
       if (error) throw error;
     },

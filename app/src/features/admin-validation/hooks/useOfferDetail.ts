@@ -27,6 +27,7 @@ interface RawTour {
   is_global_pricing: boolean | null;
   global_pricing: number | null;
   lead_price: number | null;
+  commission_amount: number | string | null;
   services: unknown;
   needs_review: boolean;
   created_at: string | null;
@@ -118,7 +119,7 @@ export function useOfferDetail(idParam: string | undefined) {
         .select(
           `id, title, agency_id, countries, duration_nights, airline,
            description, itinerary, status, photo_urls, is_global_pricing,
-           global_pricing, lead_price, services, needs_review, created_at,
+           global_pricing, lead_price, commission_amount, services, needs_review, created_at,
            agencies:agency_id ( id, name, email, phone, town )`,
         )
         .eq("id", idNum)
@@ -219,6 +220,12 @@ export function useOfferDetail(idParam: string | undefined) {
         is_global_pricing: tour.is_global_pricing,
         global_pricing: tour.global_pricing,
         lead_price: tour.lead_price,
+        commission_amount:
+          tour.commission_amount === null || tour.commission_amount === undefined
+            ? null
+            : Number.isFinite(Number(tour.commission_amount))
+              ? Number(tour.commission_amount)
+              : null,
         services: asServices(tour.services),
         needs_review: tour.needs_review,
         created_at: tour.created_at,

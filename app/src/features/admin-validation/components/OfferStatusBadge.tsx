@@ -9,9 +9,9 @@ const STATUS_CONFIG: Record<
   OfferStatus,
   { label: string; variant: React.ComponentProps<typeof Badge>["variant"] }
 > = {
-  draft: { label: "Brouillon", variant: "secondary" },
-  pending_review: { label: "En attente de revue", variant: "warning" },
-  published: { label: "Publiée", variant: "success" },
+  draft: { label: "Brouillon", variant: "soft" },
+  pending_review: { label: "En cours", variant: "info" },
+  published: { label: "Validé", variant: "success" },
   rejected: { label: "Rejetée", variant: "destructive" },
 };
 

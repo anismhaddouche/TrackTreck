@@ -43,7 +43,7 @@ export function useOffersToValidate() {
            agencies:agency_id ( id, name )`,
         )
         .eq("needs_review", true)
-        .eq("status", "draft")
+        .in("status", ["draft", "pending_review"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
