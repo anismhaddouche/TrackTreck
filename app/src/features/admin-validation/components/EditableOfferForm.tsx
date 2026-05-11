@@ -1,10 +1,20 @@
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -19,7 +29,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { useAgencies, type AgencyOption } from "../hooks/useAgencies";
+import {
+  useAgencies,
+  useCreateAgency,
+  type AgencyOption,
+} from "../hooks/useAgencies";
 import { useAirlines, type AirlineOption } from "../hooks/useAirlines";
 import type {
   Departure,
@@ -88,24 +102,40 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
     onChange({ ...offer, [key]: value });
   }
 
-  function selectAgency(agencyId: number | null) {
-    const picked =
-      agencyId !== null
-        ? agenciesQuery.data?.find((a) => a.id === agencyId) ?? null
-        : null;
+  function selectExistingAgency(agency: AgencyOption) {
     onChange({
       ...offer,
-      agency_id: agencyId,
-      agency: picked
-        ? {
-            id: picked.id,
-            name: picked.name,
-            email: picked.email,
-            phone: picked.phone,
-            town: offer.agency?.town ?? null,
-          }
-        : null,
+      agency_id: agency.id,
+      agency: {
+        id: agency.id,
+        name: agency.name,
+        email: agency.email,
+        phone: agency.phone,
+        town: offer.agency?.town ?? null,
+      },
     });
+  }
+
+  function setCustomAgencyName(name: string) {
+    // No column in `tours` stores a custom agency name. Keep agency_id
+    // unchanged so save stays non-destructive; reflect the typed value
+    // locally for display only — the next refetch will reset it.
+    onChange({
+      ...offer,
+      agency: offer.agency
+        ? { ...offer.agency, name }
+        : {
+            id: offer.agency_id ?? -1,
+            name,
+            email: null,
+            phone: null,
+            town: null,
+          },
+    });
+  }
+
+  function clearAgency() {
+    onChange({ ...offer, agency_id: null, agency: null });
   }
 
   function updateStep(idx: number, next: TourStep) {
@@ -158,12 +188,15 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               value={offer.title ?? ""}
               onChange={(v) => update("title", v || null)}
             />
-            <AgencyField
+            <AgencyCombobox
               currentId={offer.agency_id}
+              currentName={offer.agency?.name ?? null}
               agencies={agenciesQuery.data ?? []}
               isLoading={agenciesQuery.isLoading}
               isError={agenciesQuery.isError}
-              onSelect={selectAgency}
+              onSelectExisting={selectExistingAgency}
+              onCustomName={setCustomAgencyName}
+              onClear={clearAgency}
             />
             <AirlineField
               currentName={offer.airline}
@@ -378,64 +411,294 @@ function AirlineField({
   );
 }
 
-function AgencyField({
+function AgencyCombobox({
   currentId,
+  currentName,
   agencies,
   isLoading,
   isError,
-  onSelect,
+  onSelectExisting,
+  onCustomName,
+  onClear,
 }: {
   currentId: number | null;
+  currentName: string | null;
   agencies: AgencyOption[];
   isLoading: boolean;
   isError: boolean;
-  onSelect: (id: number | null) => void;
+  onSelectExisting: (agency: AgencyOption) => void;
+  onCustomName: (name: string) => void;
+  onClear: () => void;
 }) {
-  const known = currentId !== null
-    ? agencies.some((a) => a.id === currentId)
-    : false;
-  const value =
-    currentId !== null && known ? String(currentId) : undefined;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(currentName ?? "");
+
+  // Keep the input in sync when the offer (or external pickers) change it.
+  useEffect(() => {
+    setQuery(currentName ?? "");
+  }, [currentName]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const trimmed = query.trim();
+  const filtered = trimmed
+    ? agencies.filter((a) =>
+        a.name.toLowerCase().includes(trimmed.toLowerCase()),
+      )
+    : agencies;
+
+  const linkedAgency =
+    currentId !== null
+      ? agencies.find((a) => a.id === currentId) ?? null
+      : null;
+  const matchesLinked =
+    linkedAgency !== null && trimmed === linkedAgency.name;
+  const isCustom = trimmed.length > 0 && !matchesLinked;
+
+  function handleSelect(agency: AgencyOption) {
+    onSelectExisting(agency);
+    setQuery(agency.name);
+    setOpen(false);
+  }
+
+  function handleBlurCommit() {
+    if (trimmed.length === 0) {
+      onClear();
+      return;
+    }
+    if (matchesLinked) return;
+    const exact = agencies.find(
+      (a) => a.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exact) {
+      onSelectExisting(exact);
+      setQuery(exact.name);
+      return;
+    }
+    onCustomName(trimmed);
+  }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" ref={wrapRef}>
       <Label>Agence</Label>
       {isError ? (
         <p className="text-xs text-destructive">
           Impossible de charger les agences.
         </p>
-      ) : isLoading ? (
-        <p className="text-xs text-muted-foreground">
-          Chargement des agences...
-        </p>
-      ) : agencies.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Aucune agence disponible
-        </p>
       ) : (
-        <Select
-          value={value}
-          onValueChange={(v) => onSelect(v ? Number(v) : null)}
-        >
-          <SelectTrigger>
-            <SelectValue
-              placeholder={
-                currentId !== null && !known
-                  ? "Agence inconnue"
-                  : "Sélectionner une agence"
+        <div className="relative">
+          <Input
+            value={query}
+            placeholder="Sélectionner ou saisir une agence"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => {
+              window.setTimeout(handleBlurCommit, 0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleBlurCommit();
+                setOpen(false);
+              } else if (e.key === "Escape") {
+                setOpen(false);
               }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {agencies.map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            }}
+            autoComplete="off"
+          />
+          {open ? (
+            <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
+              {isLoading ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Chargement des agences...
+                </div>
+              ) : agencies.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Aucune agence disponible
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Aucun résultat — la valeur saisie sera conservée localement.
+                </div>
+              ) : (
+                filtered.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelect(a);
+                    }}
+                    className={
+                      "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent " +
+                      (a.id === currentId ? "bg-accent/60" : "")
+                    }
+                  >
+                    <span>{a.name}</span>
+                    {a.id === currentId ? (
+                      <span className="text-xs text-muted-foreground">
+                        sélectionnée
+                      </span>
+                    ) : null}
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
       )}
+      {isCustom ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Cette agence n'existe pas encore en base.
+          </p>
+          <CreateAgencyButton
+            prefillName={trimmed}
+            onCreated={(agency) => {
+              onSelectExisting(agency);
+              setQuery(agency.name);
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function CreateAgencyButton({
+  prefillName,
+  onCreated,
+}: {
+  prefillName: string;
+  onCreated: (agency: AgencyOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(prefillName);
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const createAgency = useCreateAgency();
+
+  useEffect(() => {
+    if (open) {
+      setName(prefillName);
+      setEmail("");
+      setPhone("");
+    }
+  }, [open, prefillName]);
+
+  async function submit() {
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    if (!trimmedName) return;
+    if (!trimmedEmail) {
+      toast.error("L'email de l'agence est obligatoire.");
+      return;
+    }
+    try {
+      const created = await createAgency.mutateAsync({
+        name: trimmedName,
+        email: trimmedEmail,
+        phone: phone.trim() || null,
+      });
+      toast.success("Agence créée et sélectionnée.");
+      onCreated(created);
+      setOpen(false);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Impossible de créer l'agence.";
+      toast.error(`Impossible de créer l'agence. ${msg}`);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Créer cette agence
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Créer une nouvelle agence</DialogTitle>
+            <DialogDescription>
+              Renseignez les informations de l'agence. Elle sera ajoutée à la
+              liste et sélectionnée automatiquement.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="create-agency-name">Nom de l'agence</Label>
+              <Input
+                id="create-agency-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ex : TravelCo"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-agency-email">Email</Label>
+              <Input
+                id="create-agency-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="contact@agence.dz"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="create-agency-phone">Téléphone</Label>
+              <Input
+                id="create-agency-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+213 ..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              disabled={createAgency.isPending}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={submit}
+              disabled={
+                createAgency.isPending ||
+                !name.trim() ||
+                !email.trim()
+              }
+            >
+              {createAgency.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Créer l'agence
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
