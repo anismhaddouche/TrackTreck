@@ -176,18 +176,50 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Main fields</CardTitle>
+    <div className="space-y-5">
+      <Card className="border-border/70">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Informations principales
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <FieldText
-              label="Title"
+              label="Titre"
               value={offer.title ?? ""}
               onChange={(v) => update("title", v || null)}
             />
+            <FieldText
+              label="Pays (séparés par des virgules)"
+              value={(offer.countries ?? []).join(", ")}
+              onChange={(v) =>
+                update(
+                  "countries",
+                  v
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                )
+              }
+            />
+            <FieldNumber
+              label="Durée (nuits)"
+              value={offer.duration_nights}
+              onChange={(v) => update("duration_nights", v)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Agence & compagnie
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
             <AgencyCombobox
               currentId={offer.agency_id}
               currentName={offer.agency?.name ?? null}
@@ -205,33 +237,29 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               isError={airlinesQuery.isError}
               onSelect={(name) => update("airline", name)}
             />
-            <FieldText
-              label="Countries (comma-separated)"
-              value={(offer.countries ?? []).join(", ")}
-              onChange={(v) =>
-                update(
-                  "countries",
-                  v
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                )
-              }
-            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Prix & commission
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             <FieldNumber
-              label="Duration (nights)"
-              value={offer.duration_nights}
-              onChange={(v) => update("duration_nights", v)}
-            />
-            <FieldNumber
-              label="Lead price"
+              label="Prix d'appel"
               value={offer.lead_price}
               onChange={(v) => update("lead_price", v)}
+              unit="DA"
             />
             <FieldNumber
-              label="Global pricing"
+              label="Tarif global"
               value={offer.global_pricing}
               onChange={(v) => update("global_pricing", v)}
+              unit="DA"
             />
             <FieldNumber
               label="Commission"
@@ -240,7 +268,7 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               placeholder="Ex : 10000"
               unit="DA"
             />
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 pb-1.5">
               <input
                 id="is_global_pricing"
                 type="checkbox"
@@ -250,10 +278,19 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
                 }
                 className="h-4 w-4 rounded border-input"
               />
-              <Label htmlFor="is_global_pricing">Is global pricing</Label>
+              <Label htmlFor="is_global_pricing">Tarif global activé</Label>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
+      <Card className="border-border/70">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Description, itinéraire & services
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <FieldTextarea
             label="Description"
             value={offer.description ?? ""}
@@ -261,7 +298,7 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
           />
 
           <FieldTextarea
-            label="Itinerary (one line per day, format day_N: text)"
+            label="Itinéraire (une ligne par jour, format day_N: texte)"
             value={Object.entries(offer.itinerary ?? {})
               .map(([k, v]) => `${k}: ${v}`)
               .join("\n")}
@@ -278,7 +315,7 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
           <Separator />
           <div className="grid gap-3 sm:grid-cols-2">
             <FieldTextarea
-              label="Services included (one per line)"
+              label="Services inclus (un par ligne)"
               value={(offer.services?.included ?? []).join("\n")}
               onChange={(raw) =>
                 update("services", {
@@ -288,7 +325,7 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               }
             />
             <FieldTextarea
-              label="Services excluded (one per line)"
+              label="Services exclus (un par ligne)"
               value={(offer.services?.excluded ?? []).join("\n")}
               onChange={(raw) =>
                 update("services", {
@@ -301,17 +338,21 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Steps & hotels</CardTitle>
+      <Card className="border-border/70">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Étapes & hôtels
+          </CardTitle>
           <Button size="sm" variant="outline" onClick={addStep}>
             <Plus className="h-4 w-4" />
-            Add step
+            Ajouter une étape
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           {offer.steps.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No steps yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Aucune étape pour le moment.
+            </p>
           ) : null}
           {offer.steps.map((step, idx) => (
             <StepEditor
@@ -324,17 +365,21 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">Departures</CardTitle>
+      <Card className="border-border/70">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Départs
+          </CardTitle>
           <Button size="sm" variant="outline" onClick={addDeparture}>
             <Plus className="h-4 w-4" />
-            Add departure
+            Ajouter un départ
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {offer.departures.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No departures yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Aucun départ pour le moment.
+            </p>
           ) : null}
           {offer.departures.map((dep, idx) => (
             <DepartureEditor
@@ -802,17 +847,17 @@ function StepEditor({
     <div className="rounded-md border bg-muted/20 p-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <FieldNumber
-          label="Order"
+          label="Ordre"
           value={step.step_order}
           onChange={(v) => onChange({ ...step, step_order: v ?? 0 })}
         />
         <FieldText
-          label="City"
+          label="Ville"
           value={step.city ?? ""}
           onChange={(v) => onChange({ ...step, city: v || null })}
         />
         <FieldNumber
-          label="Nights"
+          label="Nuits"
           value={step.duration_nights}
           onChange={(v) => onChange({ ...step, duration_nights: v })}
         />
@@ -821,22 +866,22 @@ function StepEditor({
       <Separator className="my-3" />
 
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Hotels</span>
+        <span className="text-sm font-medium">Hôtels</span>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={addHotel}>
             <Plus className="h-4 w-4" />
-            Add hotel
+            Ajouter un hôtel
           </Button>
           <Button size="sm" variant="ghost" onClick={onRemove}>
             <Trash2 className="h-4 w-4 text-destructive" />
-            Remove step
+            Supprimer l'étape
           </Button>
         </div>
       </div>
 
       <div className="mt-3 space-y-3">
         {step.hotels.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No hotels yet.</p>
+          <p className="text-xs text-muted-foreground">Aucun hôtel.</p>
         ) : null}
         {step.hotels.map((hotel, idx) => (
           <HotelEditor
@@ -871,12 +916,12 @@ function HotelEditor({
     <div className="rounded-md border bg-background p-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <FieldText
-          label="Hotel name"
+          label="Nom de l'hôtel"
           value={hotel.custom_hotel_name ?? ""}
           onChange={(v) => onChange({ ...hotel, custom_hotel_name: v || null })}
         />
         <FieldNumber
-          label="Hotel ID"
+          label="ID hôtel"
           value={hotel.hotel_id}
           onChange={(v) => onChange({ ...hotel, hotel_id: v })}
         />
@@ -887,7 +932,7 @@ function HotelEditor({
             onChange={(e) => onChange({ ...hotel, is_default: e.target.checked })}
             className="h-4 w-4 rounded border-input"
           />
-          <Label>Default option</Label>
+          <Label>Option par défaut</Label>
         </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -925,7 +970,7 @@ function HotelEditor({
       <div className="mt-2 flex justify-end">
         <Button size="sm" variant="ghost" onClick={onRemove}>
           <Trash2 className="h-4 w-4 text-destructive" />
-          Remove hotel
+          Supprimer l'hôtel
         </Button>
       </div>
     </div>
@@ -945,7 +990,7 @@ function DepartureEditor({
     <div className="rounded-md border bg-muted/20 p-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <FieldText
-          label="Departure city"
+          label="Ville de départ"
           value={departure.departure_city}
           onChange={(v) => onChange({ ...departure, departure_city: v })}
         />
@@ -955,28 +1000,28 @@ function DepartureEditor({
           onChange={(v) => onChange({ ...departure, stock: v })}
         />
         <FieldText
-          label="Flight departure (ISO)"
+          label="Aller — départ (ISO)"
           value={departure.flight_departure_time ?? ""}
           onChange={(v) =>
             onChange({ ...departure, flight_departure_time: v || null })
           }
         />
         <FieldText
-          label="Flight arrival (ISO)"
+          label="Aller — arrivée (ISO)"
           value={departure.flight_arrival_time ?? ""}
           onChange={(v) =>
             onChange({ ...departure, flight_arrival_time: v || null })
           }
         />
         <FieldText
-          label="Return departure (ISO)"
+          label="Retour — départ (ISO)"
           value={departure.return_flight_departure_time ?? ""}
           onChange={(v) =>
             onChange({ ...departure, return_flight_departure_time: v || null })
           }
         />
         <FieldText
-          label="Return arrival (ISO)"
+          label="Retour — arrivée (ISO)"
           value={departure.return_flight_arrival_time ?? ""}
           onChange={(v) =>
             onChange({ ...departure, return_flight_arrival_time: v || null })
@@ -986,7 +1031,7 @@ function DepartureEditor({
       <div className="mt-2 flex justify-end">
         <Button size="sm" variant="ghost" onClick={onRemove}>
           <Trash2 className="h-4 w-4 text-destructive" />
-          Remove departure
+          Supprimer le départ
         </Button>
       </div>
     </div>

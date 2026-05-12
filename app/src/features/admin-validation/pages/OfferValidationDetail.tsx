@@ -157,11 +157,13 @@ export function OfferValidationDetail() {
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="flex flex-col gap-4 border-b bg-muted/40 p-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
+      <Card className="overflow-hidden border-border/70">
+        <div className="flex flex-col gap-4 border-b bg-gradient-to-br from-muted/60 to-muted/20 p-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="soft">#{offer.id}</Badge>
+              <Badge variant="soft" className="font-mono">
+                #{offer.id}
+              </Badge>
               <OfferStatusBadge status={offer.status} />
               {offer.needs_review ? (
                 <Badge variant="warning">À vérifier</Badge>
@@ -170,7 +172,7 @@ export function OfferValidationDetail() {
                 <Badge variant="info">Modifications non enregistrées</Badge>
               ) : null}
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-balance">
+            <h1 className="text-2xl font-semibold tracking-tight text-balance lg:text-3xl">
               {offer.title ?? (
                 <span className="italic text-muted-foreground">
                   Offre sans titre
@@ -212,8 +214,8 @@ export function OfferValidationDetail() {
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          <div className="flex flex-col items-end gap-1 rounded-lg border border-border/60 bg-background/40 px-4 py-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               Prix d'appel
             </span>
             <span className="text-2xl font-semibold tabular-nums">
@@ -222,7 +224,7 @@ export function OfferValidationDetail() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-background/85 p-3 backdrop-blur">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="ghost"
@@ -238,7 +240,6 @@ export function OfferValidationDetail() {
               Télécharger le JSON
             </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={handleSave}
               disabled={isBusy || !dirty}
@@ -268,14 +269,14 @@ export function OfferValidationDetail() {
               size="sm"
               onClick={handleValidate}
               disabled={isBusy}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
               {validate.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}
-              Valider l'offre
+              Valider
             </Button>
           </div>
         </div>
@@ -291,10 +292,12 @@ export function OfferValidationDetail() {
           photoUrls={offer.photo_urls}
         />
 
-        <Card className="flex h-full flex-col overflow-hidden">
-          <div className="border-b bg-muted/40 p-4">
-            <h2 className="text-base font-semibold">Données extraites</h2>
-            <p className="text-sm text-muted-foreground">
+        <Card className="flex h-full flex-col overflow-hidden border-border/70">
+          <div className="space-y-1 border-b bg-muted/30 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Données extraites
+            </h2>
+            <p className="text-sm text-muted-foreground/80">
               Modifiez les champs directement ou ajustez le JSON. Les deux vues
               restent synchronisées.
             </p>

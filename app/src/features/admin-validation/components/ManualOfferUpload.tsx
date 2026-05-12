@@ -4,6 +4,7 @@ import {
   Image as ImageIcon,
   Loader2,
   Settings2,
+  ShieldCheck,
   Upload,
   X,
 } from "lucide-react";
@@ -97,24 +98,27 @@ export function ManualOfferUpload() {
       : Upload;
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-1 border-b bg-muted/30">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">
-            Manual upload
+    <Card className="overflow-hidden border-border/70">
+      <CardHeader className="space-y-1.5 border-b bg-muted/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Téléversement manuel
           </CardTitle>
           {hasWebhook ? (
-            <Badge variant="success">Endpoint configured</Badge>
+            <Badge variant="success" className="gap-1">
+              <ShieldCheck className="h-3 w-3" />
+              Endpoint configuré
+            </Badge>
           ) : (
             <Badge variant="warning" className="gap-1">
               <Settings2 className="h-3 w-3" />
-              Not configured
+              Non configuré
             </Badge>
           )}
         </div>
-        <CardDescription>
-          Collez du texte, déposez un PDF / image, ou les deux. Le pipeline
-          d&apos;extraction crée un brouillon prêt à valider.
+        <CardDescription className="text-sm">
+          Collez du texte, déposez un PDF ou une image, ou les deux. Le pipeline
+          d&apos;extraction créera un brouillon prêt à valider.
         </CardDescription>
       </CardHeader>
 
@@ -194,10 +198,11 @@ export function ManualOfferUpload() {
           </div>
 
           {!hasWebhook ? (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-              <strong>Pipeline endpoint not configured.</strong>{" "}
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <strong>Endpoint du pipeline non configuré.</strong>{" "}
               Définissez <code>VITE_N8N_INGESTION_WEBHOOK_URL</code> dans{" "}
-              <code>.env.local</code> et redémarrez le dev server.
+              <code>.env.local</code> puis redémarrez le serveur de
+              développement.
             </div>
           ) : null}
 

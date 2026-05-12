@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Clock,
   Filter,
-  Inbox,
   PackageOpen,
   Plane,
   Search,
@@ -44,7 +43,6 @@ import {
 import { OfferStatusBadge } from "./OfferStatusBadge";
 
 import { formatDate, formatPrice } from "@/lib/utils";
-import { cn } from "@/lib/utils";
 import type { TourSummary } from "@/lib/types";
 
 interface OffersReviewListProps {
@@ -91,36 +89,25 @@ export function OffersReviewList({
     });
   }, [offers, search, country, agencyId]);
 
-  const totalReviewable = offers.length;
   const totalShown = filtered.length;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-border/70">
       <CardHeader className="space-y-3 border-b bg-muted/30">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle className="text-base font-semibold">
-              Offres en attente de validation
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Offres en attente
             </CardTitle>
             <CardDescription>
-              Brouillons extraits par le pipeline. Vérifiez, corrigez puis
+              Brouillons extraits par le pipeline — vérifiez, corrigez, puis
               validez ou supprimez.
             </CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatChip
-              icon={Inbox}
-              label="En attente"
-              value={totalReviewable}
-              tone="warning"
-            />
-            <StatChip
-              icon={Filter}
-              label="Affichées"
-              value={totalShown}
-              tone="default"
-            />
-          </div>
+          <Badge variant="soft" className="gap-1.5 text-[11px]">
+            <Filter className="h-3 w-3" />
+            {totalShown} affichées
+          </Badge>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -307,33 +294,6 @@ function CountryChips({ countries }: { countries: string[] }) {
           <TooltipContent>{hidden.join(", ")}</TooltipContent>
         </Tooltip>
       ) : null}
-    </div>
-  );
-}
-
-function StatChip({
-  icon: Icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: number;
-  tone: "default" | "warning";
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
-        tone === "warning"
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-          : "border-border bg-card text-foreground/80",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{value}</span>
     </div>
   );
 }
