@@ -2,9 +2,9 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: ["develop"]
   pull_request:
-    branches: [ "develop" ]
+    branches: ["develop"]
 
 env:
   REGISTRY: ghcr.io
@@ -21,11 +21,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ÉTAPE : Configuration de QEMU (nécessaire pour cross-build ARM)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # ÉTAPE : Configuration de Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -49,10 +47,17 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          # The frontend lives under app/ — package.json and Dockerfile are inside that folder.
+          context: ./app
           file: ./app/Dockerfile
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/develop' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          # Suppression temporaire du cache pour isoler l'erreur ;  
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_SUPABASE_URL=${{ vars.SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            VITE_SUPABASE_STORAGE_BUCKET=${{ vars.SUPABASE_STORAGE_BUCKET }}
+            VITE_N8N_INGESTION_WEBHOOK_URL=${{ vars.N8N_INGESTION_WEBHOOK_URL }}

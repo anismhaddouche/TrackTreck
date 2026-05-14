@@ -42,7 +42,7 @@ services:
       N8N_HOST: ${N8N_HOST}
       EVOLUTION_HOST: ${EVOLUTION_HOST}
       ACME_EMAIL: ${ACME_EMAIL}
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     depends_on:
       - app
       - n8n
@@ -63,7 +63,7 @@ services:
     restart: unless-stopped
     expose:
       - "80"
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   n8n:
@@ -92,7 +92,7 @@ services:
       N8N_SECURE_COOKIE: "true"
     volumes:
       - n8n_data:/home/node/.n8n
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   evolution-postgres:
@@ -106,26 +106,26 @@ services:
     volumes:
       - evolution_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   evolution-redis:
     image: redis:7.4-alpine
     container_name: evolution_redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}" ]
     volumes:
       - evolution_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   evolution-api:
@@ -177,5 +177,5 @@ services:
       CONFIG_SESSION_PHONE_NAME: "Chrome"
     volumes:
       - evolution_instances:/evolution/instances
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
