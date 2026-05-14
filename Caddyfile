@@ -1,0 +1,31 @@
+# Caddy reverse proxy — auto HTTPS via Let's Encrypt
+# Variables are read from the container environment (see docker-compose.prod.yml).
+
+{
+    email {$ACME_EMAIL}
+    # Comment out the next line in production for real certs.
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# Admin / frontend
+{$APP_HOST} {
+    encode zstd gzip
+    reverse_proxy app:80
+}
+
+# n8n
+{$N8N_HOST} {
+    encode zstd gzip
+    reverse_proxy n8n:5678 {
+        # n8n needs websockets for the editor + executions
+        flush_interval -1
+    }
+}
+
+# Evolution API
+{$EVOLUTION_HOST} {
+    encode zstd gzip
+    reverse_proxy evolution-api:8080 {
+        flush_interval -1
+    }
+}

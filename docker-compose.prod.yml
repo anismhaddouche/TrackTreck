@@ -1,0 +1,181 @@
+# TrackTreck — Production stack for Hetzner CX23 (2 vCPU / 4 GB RAM)
+# Supabase is EXTERNAL (Supabase Cloud). No supabase containers are deployed here.
+#
+# Public ports: 80 / 443 (Caddy) only.
+# Internal services (n8n, evolution-api, postgres, redis, app) talk over the
+# private `tracktreck` Docker network.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  tracktreck:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+  n8n_data:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
+
+services:
+  caddy:
+    # Pinned: bump explicitly after testing a newer tag.
+    image: caddy:2.8.4-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME}
+      APP_HOST: ${APP_HOST}
+      N8N_HOST: ${N8N_HOST}
+      EVOLUTION_HOST: ${EVOLUTION_HOST}
+      ACME_EMAIL: ${ACME_EMAIL}
+    networks: [tracktreck]
+    depends_on:
+      - app
+      - n8n
+      - evolution-api
+    logging: *default-logging
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+        VITE_N8N_INGESTION_WEBHOOK_URL: ${VITE_N8N_INGESTION_WEBHOOK_URL}
+        VITE_SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET}
+    image: tracktreck-app:prod
+    container_name: tracktreck_app
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks: [tracktreck]
+    logging: *default-logging
+
+  n8n:
+    # Pinned. Check https://github.com/n8n-io/n8n/releases before bumping.
+    image: n8nio/n8n:1.73.1
+    container_name: n8n
+    restart: unless-stopped
+    expose:
+      - "5678"
+    environment:
+      # SQLite by default — perfect for CX23, no extra Postgres needed
+      DB_TYPE: sqlite
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST}
+      WEBHOOK_URL: https://${N8N_HOST}/
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_PROXY_HOPS: 1
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_SECURE_COOKIE: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks: [tracktreck]
+    logging: *default-logging
+
+  evolution-postgres:
+    image: postgres:15.8-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tracktreck]
+    logging: *default-logging
+
+  evolution-redis:
+    image: redis:7.4-alpine
+    container_name: evolution_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tracktreck]
+    logging: *default-logging
+
+  evolution-api:
+    # Pinned. Check https://github.com/EvolutionAPI/evolution-api/releases before bumping.
+    image: evoapicloud/evolution-api:v2.2.3
+    container_name: evolution_api
+    restart: unless-stopped
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    expose:
+      - "8080"
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: https://${EVOLUTION_HOST}
+      CORS_ORIGIN: "*"
+      CORS_METHODS: "POST,GET,PUT,DELETE"
+      CORS_CREDENTIALS: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@evolution-postgres:5432/${POSTGRES_DB}?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://default:${REDIS_PASSWORD}@evolution-redis:6379
+      CACHE_REDIS_PREFIX_KEY: evolution-cache
+      CACHE_REDIS_TTL: "604800"
+      CACHE_REDIS_SAVE_INSTANCES: "true"
+      CACHE_LOCAL_ENABLED: "true"
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      LOG_LEVEL: "ERROR,WARN,INFO"
+      LOG_COLOR: "true"
+      DEL_INSTANCE: "false"
+      DEL_TEMP_INSTANCES: "true"
+      LANGUAGE: en
+      QRCODE_LIMIT: "30"
+      TELEMETRY_ENABLED: "false"
+      WEBSOCKET_ENABLED: "true"
+      CONFIG_SESSION_PHONE_CLIENT: "TrackTreck"
+      CONFIG_SESSION_PHONE_NAME: "Chrome"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks: [tracktreck]
+    logging: *default-logging

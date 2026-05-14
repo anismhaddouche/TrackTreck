@@ -1,0 +1,11 @@
+node_modules
+dist
+.dist
+.vite
+.env
+.env.local
+.env.*.local
+*.log
+.git
+.claude
+*.tsbuildinfo
