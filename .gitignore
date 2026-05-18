@@ -41,3 +41,12 @@ Thumbs.db
 tmp/
 
 .claude/
+
+# Generated runtime config (rendered Kong config contains secrets)
+.runtime/
+
+# Local DB / volume backups (may contain real data and secrets)
+backup-*/
+backups/
+*.sql.gz
+*.tgz

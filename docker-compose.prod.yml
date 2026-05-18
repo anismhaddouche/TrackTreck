@@ -51,7 +51,7 @@ services:
       EVOLUTION_HOST: ${EVOLUTION_HOST}
       SUPABASE_HOST: ${SUPABASE_HOST}
       ACME_EMAIL: ${ACME_EMAIL}
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     depends_on:
       - app
       - n8n
@@ -74,18 +74,18 @@ services:
     image: tracktreck-app:prod
     container_name: tracktreck_app
     restart: unless-stopped
-    expose: ["80"]
-    networks: [tracktreck]
+    expose: [ "80" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   # =========================================================================
   # n8n (SQLite — keeps the box light)
   # =========================================================================
   n8n:
-    image: n8nio/n8n:1.73.1
+    image: n8nio/n8n:2.20.9
     container_name: n8n
     restart: unless-stopped
-    expose: ["5678"]
+    expose: [ "5678" ]
     environment:
       DB_TYPE: sqlite
       N8N_HOST: ${N8N_HOST}
@@ -100,11 +100,10 @@ services:
       N8N_PROXY_HOPS: 1
       GENERIC_TIMEZONE: ${TZ:-UTC}
       N8N_DIAGNOSTICS_ENABLED: "false"
-      N8N_RUNNERS_ENABLED: "true"
       N8N_SECURE_COOKIE: "true"
     volumes:
       - n8n_data:/home/node/.n8n
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   # =========================================================================
@@ -129,26 +128,26 @@ services:
     volumes:
       - evolution_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER} -d ${EVOLUTION_DB_NAME}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER} -d ${EVOLUTION_DB_NAME}" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   evolution-redis:
     image: redis:7.4-alpine
     container_name: evolution_redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru" ]
     volumes:
       - evolution_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   evolution-api:
@@ -158,7 +157,7 @@ services:
     depends_on:
       evolution-postgres: { condition: service_healthy }
       evolution-redis: { condition: service_healthy }
-    expose: ["8080"]
+    expose: [ "8080" ]
     environment:
       SERVER_TYPE: http
       SERVER_PORT: 8080
@@ -196,7 +195,7 @@ services:
       CONFIG_SESSION_PHONE_NAME: "Chrome"
     volumes:
       - evolution_instances:/evolution/instances
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   # =========================================================================
@@ -226,11 +225,11 @@ services:
     volumes:
       - supabase_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -h localhost" ]
       interval: 10s
       timeout: 5s
       retries: 10
-    networks: [tracktreck]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-auth:
@@ -263,8 +262,8 @@ services:
       GOTRUE_SMTP_SENDER_NAME: TrackTreck
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
       GOTRUE_SMS_AUTOCONFIRM: "true"
-    expose: ["9999"]
-    networks: [tracktreck]
+    expose: [ "9999" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-rest:
@@ -281,8 +280,8 @@ services:
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: ${SUPABASE_JWT_SECRET}
       PGRST_APP_SETTINGS_JWT_EXP: 3600
-    expose: ["3000"]
-    networks: [tracktreck]
+    expose: [ "3000" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-storage:
@@ -309,8 +308,8 @@ services:
       IMGPROXY_URL: http://supabase-imgproxy:5001
     volumes:
       - supabase_storage_data:/var/lib/storage
-    expose: ["5000"]
-    networks: [tracktreck]
+    expose: [ "5000" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-imgproxy:
@@ -324,8 +323,8 @@ services:
       IMGPROXY_ENABLE_WEBP_DETECTION: "true"
     volumes:
       - supabase_storage_data:/var/lib/storage:ro
-    expose: ["5001"]
-    networks: [tracktreck]
+    expose: [ "5001" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-meta:
@@ -341,12 +340,12 @@ services:
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: supabase_admin
       PG_META_DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
-    expose: ["8080"]
-    networks: [tracktreck]
+    expose: [ "8080" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-studio:
-    image: supabase/studio:20240909-6486cd6
+    image: supabase/studio:2026.05.11-sha-5a5099a
     container_name: supabase_studio
     restart: unless-stopped
     depends_on:
@@ -365,8 +364,15 @@ services:
       LOGFLARE_URL: http://localhost
       NEXT_PUBLIC_ENABLE_LOGS: "false"
       NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
-    expose: ["3000"]
-    networks: [tracktreck]
+      # Bind to all interfaces (Next.js standalone defaults to localhost only).
+      HOSTNAME: "0.0.0.0"
+      # Needed by a few Studio pages that talk directly to Postgres.
+      POSTGRES_HOST: supabase-db
+      # Edge Functions UI tries to write here on first load; /tmp is fine since
+      # we don't run the Edge Runtime container.
+      EDGE_FUNCTIONS_MANAGEMENT_FOLDER: /tmp
+    expose: [ "3000" ]
+    networks: [ tracktreck ]
     logging: *default-logging
 
   supabase-kong:
@@ -390,7 +396,10 @@ services:
       DASHBOARD_USERNAME: ${STUDIO_USERNAME:-admin}
       DASHBOARD_PASSWORD: ${STUDIO_PASSWORD}
     volumes:
-      - ./supabase/kong.yml:/home/kong/kong.yml:ro
-    expose: ["8000"]
-    networks: [tracktreck]
+      # Rendered by scripts/render-kong-config.sh — runs placeholder substitution
+      # because Kong does not resolve ${VAR} itself. NEVER mount supabase/kong.yml
+      # directly.
+      - ./.runtime/kong.yml:/home/kong/kong.yml:ro
+    expose: [ "8000" ]
+    networks: [ tracktreck ]
     logging: *default-logging

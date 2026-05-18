@@ -35,7 +35,7 @@ internal Supabase service stays on the private `tracktreck` Docker network.
 
 ## 1. Provision the VPS
 
-1. Create a Hetzner **CX33 or larger** (Ubuntu 24.04 LTS). See §11 for sizing.
+1. Create a Hetzner **CX33 or larger** (Ubuntu 24.04 LTS). See §12 for sizing.
    CX23 boots but is **MVP-only** — see the warning at the bottom.
 2. Add your SSH key.
 3. Note the public IPv4.
@@ -101,11 +101,14 @@ docker compose version    # should print v2.x
 ## 3. Clone the repository
 
 ```bash
-cd ~
+mkdir -p ~/apps && cd ~/apps
 git clone https://github.com/<owner>/TrackTreck.git
-cd TrackTreck
+cd ~/apps/TrackTreck
 cp .env.example .env
 ```
+
+> All subsequent commands assume **`~/apps/TrackTreck`** as the working
+> directory on the VPS.
 
 ---
 
@@ -155,7 +158,24 @@ Store the service role as an **n8n credential** inside n8n.
 
 ---
 
-## 6. Start the stack
+## 6. Render the Kong gateway config (REQUIRED before first `up`)
+
+Kong does **not** expand `${VAR}` placeholders by itself. The repo ships a
+template at `supabase/kong.yml`; the rendered file with real secrets lives
+at `.runtime/kong.yml` (gitignored) and is what docker-compose mounts.
+
+```bash
+./scripts/render-kong-config.sh
+```
+
+The script reads `.env`, substitutes `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `DASHBOARD_USERNAME` (or `STUDIO_USERNAME`),
+`DASHBOARD_PASSWORD` (or `STUDIO_PASSWORD`), and fails fast if any are
+missing. Re-run it whenever you rotate any of those values.
+
+---
+
+## 7. Start the stack
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build
@@ -166,6 +186,34 @@ First run will:
 - pull Supabase / n8n / Evolution / Caddy images,
 - initialize both Postgres clusters,
 - request Let's Encrypt certificates for the four hostnames.
+
+### If supabase-auth or supabase-storage crash on first boot
+
+You may see one of:
+- `password authentication failed for user "supabase_auth_admin"`
+- `schema "auth" does not exist`
+- `type "auth.factor_type" does not exist`
+
+Apply the idempotent bootstrap and restart the dependents:
+
+```bash
+./scripts/bootstrap-supabase-db.sh
+```
+
+This creates the Supabase roles (`anon`, `authenticated`, `service_role`,
+`authenticator`, `supabase_auth_admin`, `supabase_storage_admin`,
+`supabase_admin`), the `auth` and `storage` schemas, the
+`auth.factor_type` enum, and aligns the admin role passwords with
+`SUPABASE_DB_PASSWORD`.
+
+It also grants `anon` / `authenticated` access to the business tables in
+`public` (agencies, airlines, departures, hotel_options, hotels,
+tour_revisions, tour_steps, tours), enables RLS, and installs a permissive
+`anon_admin_access` policy so the admin SPA can read/write through PostgREST
+with the anon key. **This is acceptable only for the current admin-only
+prototype** — before real end-users, replace `anon_admin_access` with
+role-aware policies and split read vs write per role. `schema_migrations`
+is intentionally left untouched (internal).
 
 Watch Caddy until certs are issued:
 
@@ -180,17 +228,12 @@ Then visit:
 - `https://supabase.example.com` — Supabase Studio (Basic Auth via Kong)
 - `https://supabase.example.com/rest/v1/`, `/auth/v1/`, `/storage/v1/` — APIs
 
-Create the storage bucket once Studio is up:
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T supabase-db \
-  psql -U postgres -d postgres -c \
-  "insert into storage.buckets (id, name, public) values ('travel-offer-assets','travel-offer-assets',false) on conflict do nothing;"
-```
+The default `travel-offer-assets` storage bucket is created idempotently by
+`scripts/bootstrap-supabase-db.sh` (run it once after the first `up`).
 
 ---
 
-## 7. Day-to-day operations
+## 8. Day-to-day operations
 
 | Action                         | Command                                                                                  |
 | ------------------------------ | ---------------------------------------------------------------------------------------- |
@@ -208,9 +251,30 @@ docker compose -f docker-compose.prod.yml exec -T supabase-db \
 | Disk free                      | `df -h /`                                                                                |
 | Prune unused layers            | `docker system prune -af`                                                                |
 
+### Upgrading n8n
+
+- n8n is pinned to **`n8nio/n8n:2.20.9`**. Bump the tag in
+  `docker-compose.prod.yml` and recreate only that service:
+  ```bash
+  docker compose -f docker-compose.prod.yml pull n8n
+  docker compose -f docker-compose.prod.yml up -d n8n
+  ```
+- Never remove the `n8n_data` volume — it holds workflows, credentials and
+  the SQLite DB.
+- After upgrading, tail logs and confirm migrations complete cleanly:
+  ```bash
+  docker compose -f docker-compose.prod.yml logs -f n8n | grep -iE "migration|error"
+  ```
+- The "Python task runner is disabled" warning can be ignored unless we plan
+  to run Python task runners. The native (JS) runner is now built-in and no
+  longer needs `N8N_RUNNERS_ENABLED` (deprecated in 2.x — removed from the
+  compose file).
+- Monitor the `binaryData` storage path deprecation notice before n8n v3 —
+  the default location may move; revisit the volume mount when v3 ships.
+
 ---
 
-## 8. Backups
+## 9. Backups
 
 Critical volumes:
 
@@ -231,7 +295,7 @@ STAMP=$(date +%F)
 DEST=/home/deploy/backups/$STAMP
 mkdir -p "$DEST"
 
-cd /home/deploy/TrackTreck
+cd /home/deploy/apps/TrackTreck
 export $(grep -v '^#' .env | xargs -d '\n')
 
 # Supabase Postgres — logical dump (auth, storage, public, everything)
@@ -296,7 +360,7 @@ docker compose -f docker-compose.prod.yml start supabase-storage supabase-imgpro
 
 ---
 
-## 9. Monitoring (CX23 essentials)
+## 10. Monitoring (CX23 essentials)
 
 ```bash
 # Live RAM / CPU per container
@@ -320,7 +384,7 @@ Set a simple OOM watcher if you stay on CX23:
 
 ---
 
-## 10. Security & secrets summary
+## 11. Security & secrets summary
 
 - `.env` is gitignored and **must never** be committed. Verify: `git check-ignore -v .env`.
 - `SUPABASE_SERVICE_ROLE_KEY` is **never** read by the frontend (search:
@@ -336,7 +400,7 @@ Set a simple OOM watcher if you stay on CX23:
 
 ---
 
-## 11. Hetzner CX23 vs CX33
+## 12. Hetzner CX23 vs CX33
 
 ### CX23 (2 vCPU / 4 GB / 40 GB) — **MVP / demo only**
 
@@ -368,7 +432,7 @@ year of Storage growth. This is the **minimum** you should run for real users.
 
 ---
 
-## 12. Pre-push checklist
+## 13. Pre-push checklist
 
 - [ ] `.env` is **not** tracked (`git status` / `git check-ignore -v .env`)
 - [ ] No real keys committed: `git grep -nE "eyJ|change_me|sb_secret_" -- :!.env.example :!README_DEPLOYMENT.md`
@@ -383,7 +447,7 @@ year of Storage growth. This is the **minimum** you should run for real users.
 
 ---
 
-## 13. Production validation checklist (run once after deploy)
+## 14. Production validation checklist (run once after deploy)
 
 ```bash
 # All containers up & healthy
@@ -399,6 +463,15 @@ docker compose -f docker-compose.prod.yml logs caddy | grep -iE "certificate|err
 for H in $APP_HOST $N8N_HOST $EVOLUTION_HOST $SUPABASE_HOST; do
   curl -sS -o /dev/null -w "$H -> %{http_code}\n" "https://$H"
 done
+
+# Quick smoke test (example with the sslip.io hostnames used in our deploy)
+curl -I https://admin.157.90.166.243.sslip.io
+curl -I https://n8n.157.90.166.243.sslip.io
+curl -I https://api.157.90.166.243.sslip.io
+curl -I -u "$STUDIO_USERNAME:$STUDIO_PASSWORD" https://supabase.157.90.166.243.sslip.io
+# Expected for Supabase Studio behind Kong Basic Auth:
+#   HTTP/2 307
+#   location: /project/default
 
 # Supabase REST is wired
 curl -sS "https://$SUPABASE_HOST/rest/v1/" -H "apikey: $SUPABASE_ANON_KEY" | head
@@ -436,3 +509,152 @@ Expected:
 - [ ] `OK_NO_SERVICE_ROLE` and `OK_NO_LOCALHOST` print
 - [ ] `docker stats` total memory < 3 GB at idle (CX23) / < 5 GB (CX33)
 - [ ] `df -h /` shows > 10 GB free
+
+---
+
+## 15. Migrating data from a local Supabase (`public` schema only)
+
+> **Do NOT** restore the full Supabase CLI dump (`roles.sql` + `schema.sql` +
+> `data.sql`) into a self-hosted Supabase. Those files include the `auth`,
+> `graphql`, `storage`, and `extensions` schemas plus role definitions that
+> conflict with the ones the self-hosted image manages — restoring them
+> breaks Auth, Storage and Studio. Always migrate **public-only**.
+
+### On your laptop
+
+```bash
+npx supabase db dump --local --schema public -f .\backup-public\schema-public.sql
+npx supabase db dump --local --schema public -f .\backup-public\data-public.sql --use-copy --data-only
+scp .\backup-public\schema-public.sql deploy@<VPS_IP>:/home/deploy/apps/TrackTreck/
+scp .\backup-public\data-public.sql   deploy@<VPS_IP>:/home/deploy/apps/TrackTreck/
+```
+
+### On the VPS
+
+```bash
+cd ~/apps/TrackTreck
+
+# 1. Reset only the public schema (everything else is untouched).
+docker exec -i supabase_db psql -U postgres -d postgres <<'SQL'
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL   ON SCHEMA public TO postgres, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+SQL
+
+# 2. Strip Postgres 17-only directives the CLI may emit.
+sed -i '/transaction_timeout/d' schema-public.sql data-public.sql
+
+# 3. Load schema then data.
+docker exec -i supabase_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < schema-public.sql
+docker exec -i supabase_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < data-public.sql
+
+# 4. Re-apply storage grants / search_path that DROP SCHEMA may have wiped.
+./scripts/bootstrap-supabase-db.sh
+```
+
+### After-migration auth repair
+
+Dropping `public` rarely touches `auth`, but if Supabase Auth starts failing
+after a migration:
+
+```bash
+./scripts/bootstrap-supabase-db.sh
+docker compose -f docker-compose.prod.yml restart supabase-auth supabase-storage supabase-rest supabase-meta
+```
+
+### Known post-migration task: image URLs
+
+Rows migrated from the local Supabase may still reference the local Storage
+URL, e.g.:
+
+```
+http://host.docker.internal:54321/storage/v1/object/public/...
+```
+
+These must be rewritten to the VPS URL **only after the actual files have
+been uploaded to the new bucket**:
+
+```
+https://supabase.<your-host>/storage/v1/object/public/...
+```
+
+This is a **manual** task — do not run a destructive `UPDATE` until file
+migration is confirmed. Suggested workflow:
+
+1. Re-upload files to the `travel-offer-assets` bucket (via Studio,
+   `supabase storage cp`, or `s3cmd` against the Storage S3-compat endpoint).
+2. Verify a sample URL returns `200`.
+3. Then, inside a transaction:
+   ```sql
+   BEGIN;
+   UPDATE <table>
+   SET <col> = replace(<col>,
+                       'http://host.docker.internal:54321',
+                       'https://supabase.<your-host>')
+   WHERE <col> LIKE 'http://host.docker.internal%';
+   -- inspect, then COMMIT (or ROLLBACK).
+   ```
+
+---
+
+## 16. Storage smoke test
+
+```bash
+cd ~/apps/TrackTreck
+SERVICE_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' .env | cut -d '=' -f2-)
+
+curl -i \
+  -H "apikey: $SERVICE_KEY" \
+  -H "Authorization: Bearer $SERVICE_KEY" \
+  "https://supabase.<your-host>/storage/v1/bucket"
+```
+
+Expected:
+- `HTTP/2 200` and a JSON array.
+- After the first run of `scripts/bootstrap-supabase-db.sh` (or manual
+  creation), the array contains the `travel-offer-assets` bucket.
+- Empty `[]` is fine before any bucket is created — it means Storage itself
+  is healthy.
+
+If you get `relation "buckets" does not exist`, the storage grants /
+search_path haven't been applied — run `./scripts/bootstrap-supabase-db.sh`.
+
+---
+
+## 17. Known-good state
+
+```
+docker compose -f docker-compose.prod.yml ps
+```
+
+Expected services:
+
+| Service              | State              |
+| -------------------- | ------------------ |
+| `caddy`              | Up                 |
+| `app`                | Up (healthy)       |
+| `n8n`                | Up                 |
+| `evolution-api`      | Up                 |
+| `evolution-postgres` | Up (healthy)       |
+| `evolution-redis`    | Up (healthy)       |
+| `supabase-db`        | Up (healthy)       |
+| `supabase-auth`      | Up                 |
+| `supabase-rest`      | Up                 |
+| `supabase-storage`   | Up                 |
+| `supabase-meta`      | Up (healthy)       |
+| `supabase-studio`    | Up (healthy)       |
+| `supabase-kong`      | Up (healthy)       |
+| `supabase-imgproxy`  | Up                 |
+
+End-to-end smoke checks:
+
+- [ ] Admin app loads offers (`https://admin.<host>` → list renders, no console errors)
+- [ ] Supabase Studio opens (`https://supabase.<host>` → Basic Auth then dashboard)
+- [ ] Studio Table Editor shows `public` tables
+- [ ] Studio Storage shows `travel-offer-assets` bucket
+- [ ] `curl https://api.<host>/` returns Evolution welcome JSON
+- [ ] `https://n8n.<host>` shows the n8n login page (after Basic Auth)

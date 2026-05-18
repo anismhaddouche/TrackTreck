@@ -1,3 +1,8 @@
+# Kong declarative config TEMPLATE.
+# DO NOT mount this file directly into Kong — the ${VAR} placeholders are not
+# resolved by Kong itself. Run `scripts/render-kong-config.sh` to produce
+# `.runtime/kong.yml` (gitignored, contains secrets), which is what
+# docker-compose.prod.yml mounts.
 _format_version: "2.1"
 _transform: true
 
@@ -8,12 +13,12 @@ consumers:
   - username: DASHBOARD
   - username: anon
     keyauth_credentials:
-      - key: $SUPABASE_ANON_KEY
+      - key: ${SUPABASE_ANON_KEY}
     acls:
       - group: anon
   - username: service_role
     keyauth_credentials:
-      - key: $SUPABASE_SERVICE_ROLE_KEY
+      - key: ${SUPABASE_SERVICE_ROLE_KEY}
     acls:
       - group: admin
 
@@ -25,8 +30,8 @@ acls:
 
 basicauth_credentials:
   - consumer: DASHBOARD
-    username: $DASHBOARD_USERNAME
-    password: $DASHBOARD_PASSWORD
+    username: ${DASHBOARD_USERNAME}
+    password: ${DASHBOARD_PASSWORD}
 
 ###
 ### Services & Routes
