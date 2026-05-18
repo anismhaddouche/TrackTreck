@@ -1,0 +1,140 @@
+_format_version: "2.1"
+_transform: true
+
+###
+### Consumers / Credentials / ACL
+###
+consumers:
+  - username: DASHBOARD
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+    acls:
+      - group: anon
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_ROLE_KEY
+    acls:
+      - group: admin
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+basicauth_credentials:
+  - consumer: DASHBOARD
+    username: $DASHBOARD_USERNAME
+    password: $DASHBOARD_PASSWORD
+
+###
+### Services & Routes
+###
+services:
+
+  ## Open Auth routes (signup/login/etc) — no api-key required
+  - name: auth-v1-open
+    url: http://supabase-auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths: [/auth/v1/verify]
+    plugins:
+      - name: cors
+
+  - name: auth-v1-open-callback
+    url: http://supabase-auth:9999/callback
+    routes:
+      - name: auth-v1-open-callback
+        strip_path: true
+        paths: [/auth/v1/callback]
+    plugins:
+      - name: cors
+
+  - name: auth-v1-open-authorize
+    url: http://supabase-auth:9999/authorize
+    routes:
+      - name: auth-v1-open-authorize
+        strip_path: true
+        paths: [/auth/v1/authorize]
+    plugins:
+      - name: cors
+
+  ## Auth (requires anon or service_role)
+  - name: auth-v1
+    _comment: "GoTrue (auth)"
+    url: http://supabase-auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths: [/auth/v1/]
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin, anon]
+
+  ## REST (PostgREST)
+  - name: rest-v1
+    _comment: "PostgREST"
+    url: http://supabase-rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths: [/rest/v1/]
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin, anon]
+
+  ## Storage
+  - name: storage-v1
+    _comment: "Storage API"
+    url: http://supabase-storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths: [/storage/v1/]
+    plugins:
+      - name: cors
+
+  ## Postgres-Meta — admin only
+  - name: meta
+    _comment: "postgres-meta"
+    url: http://supabase-meta:8080/
+    routes:
+      - name: meta-all
+        strip_path: true
+        paths: [/pg/]
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin]
+
+  ## Studio — protected by Basic Auth
+  - name: dashboard
+    _comment: "Studio UI"
+    url: http://supabase-studio:3000/
+    routes:
+      - name: dashboard-all
+        strip_path: false
+        paths: [/]
+    plugins:
+      - name: cors
+      - name: basic-auth
+        config:
+          hide_credentials: true
