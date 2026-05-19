@@ -45,12 +45,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      DOMAIN_NAME: ${DOMAIN_NAME}
-      APP_HOST: ${APP_HOST}
-      N8N_HOST: ${N8N_HOST}
-      EVOLUTION_HOST: ${EVOLUTION_HOST}
-      SUPABASE_HOST: ${SUPABASE_HOST}
-      ACME_EMAIL: ${ACME_EMAIL}
+      PUBLIC_HOST: ${PUBLIC_HOST}
     networks: [ tracktreck ]
     depends_on:
       - app
@@ -88,11 +83,14 @@ services:
     expose: [ "5678" ]
     environment:
       DB_TYPE: sqlite
-      N8N_HOST: ${N8N_HOST}
+      N8N_HOST: ${PUBLIC_HOST}
       N8N_PORT: 5678
-      N8N_PROTOCOL: https
-      N8N_EDITOR_BASE_URL: https://${N8N_HOST}
-      WEBHOOK_URL: https://${N8N_HOST}/
+      N8N_PROTOCOL: http
+      # n8n is reverse-proxied under /n8n/ — it must be aware of its base path
+      # so it builds correct asset / editor / webhook URLs.
+      N8N_PATH: /n8n/
+      N8N_EDITOR_BASE_URL: ${N8N_PUBLIC_URL}
+      WEBHOOK_URL: ${N8N_PUBLIC_URL}/
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
@@ -100,7 +98,9 @@ services:
       N8N_PROXY_HOPS: 1
       GENERIC_TIMEZONE: ${TZ:-UTC}
       N8N_DIAGNOSTICS_ENABLED: "false"
-      N8N_SECURE_COOKIE: "true"
+      # HTTP-only deployment for now: disable the secure-cookie flag, otherwise
+      # the editor login cookie is dropped by the browser.
+      N8N_SECURE_COOKIE: "false"
     volumes:
       - n8n_data:/home/node/.n8n
     networks: [ tracktreck ]
@@ -161,7 +161,7 @@ services:
     environment:
       SERVER_TYPE: http
       SERVER_PORT: 8080
-      SERVER_URL: https://${EVOLUTION_HOST}
+      SERVER_URL: ${EVOLUTION_PUBLIC_URL}
       CORS_ORIGIN: "*"
       CORS_METHODS: "POST,GET,PUT,DELETE"
       CORS_CREDENTIALS: "true"

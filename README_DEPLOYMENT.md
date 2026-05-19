@@ -4,32 +4,52 @@
 wired together by Docker Compose. **Supabase is self-hosted on the same VPS**
 — no external Supabase Cloud dependency.
 
+**Public access is HTTP-only and path-based on the VPS IP** — no DNS, no TLS:
+
+| Public URL                                  | Service                          |
+| ------------------------------------------- | -------------------------------- |
+| `http://157.90.166.243/admin`               | Admin SPA                        |
+| `http://157.90.166.243/n8n`                 | n8n editor (Basic Auth)          |
+| `http://157.90.166.243/api`                 | Evolution API / manager          |
+| `http://157.90.166.243/supabase`            | Supabase Kong gateway + Studio   |
+
 ```
-                Internet (TCP 80 / 443)
-                          │
-                  ┌───────▼───────┐
-                  │     Caddy     │  auto-HTTPS (Let's Encrypt)
-                  └─┬─────┬─────┬─┴───┐
-        admin.host │     │     │     │ supabase.host
-        n8n.host   │     │     │ api.host
-   ┌────────▼┐ ┌───▼─┐ ┌─▼──────┐ ┌───▼────────────┐
-   │  app    │ │ n8n │ │ evo-api│ │ supabase-kong  │
-   │ (nginx) │ │     │ │        │ └─┬──────────────┘
-   └─────────┘ └─────┘ └─┬────┬─┘   │ /auth /rest /storage /pg /
-                        │    │     ├──> supabase-auth (gotrue)
-                        │    │     ├──> supabase-rest (postgrest)
-                        │    │     ├──> supabase-storage + imgproxy
-                        │    │     ├──> supabase-meta
-                        │    │     └──> supabase-studio (Basic Auth)
-                        │    │           │
+                Internet (TCP 80)
+                       │
+                ┌──────▼──────┐
+                │    Caddy    │  HTTP-only, single :80, path-routed
+                └┬───┬───┬───┬┘
+         /admin │   │   │   │ /supabase
+           /n8n │   │   │ /api
+   ┌────────▼┐ ┌▼────┐ ┌▼──────┐ ┌▼──────────────┐
+   │  app    │ │ n8n │ │evo-api│ │ supabase-kong │
+   │ (nginx) │ │     │ │       │ └─┬─────────────┘
+   └─────────┘ └─────┘ └─┬────┬┘   │ /auth /rest /storage /pg /
+                        │    │    ├──> supabase-auth (gotrue)
+                        │    │    ├──> supabase-rest (postgrest)
+                        │    │    ├──> supabase-storage + imgproxy
+                        │    │    ├──> supabase-meta
+                        │    │    └──> supabase-studio (Basic Auth)
                 ┌───────▼┐ ┌─▼────┐ ┌─────▼──────┐
-                │ evo-pg │ │ evo- │ │ supabase-db│  (separate Postgres clusters)
+                │ evo-pg │ │ evo- │ │ supabase-db│
                 │  (15)  │ │ redis│ │   (15.x)   │
                 └────────┘ └──────┘ └────────────┘
 ```
 
-Only ports **80** and **443** are exposed publicly. Every database, cache and
-internal Supabase service stays on the private `tracktreck` Docker network.
+Only port **80** is exposed publicly (443 is reserved for a later TLS
+migration). Every database, cache and internal Supabase service stays on the
+private `tracktreck` Docker network.
+
+> ⚠️ **Supabase Studio under path-based routing is fragile.** Studio is a
+> Next.js app that hard-codes absolute paths (`/_next/...`, `/api/...`,
+> `/project/default`) at the document root. When served under `/supabase`,
+> initial HTML loads, but several internal links, asset paths and API calls
+> originating from Studio's own client code will resolve to the wrong path
+> (e.g. `/_next/static/...` instead of `/supabase/_next/static/...`). The
+> REST / Auth / Storage APIs themselves work fine through `/supabase/rest/v1/`,
+> `/supabase/auth/v1/`, `/supabase/storage/v1/` because Kong handles those
+> routes explicitly. **For a smoother Studio experience, run it on a
+> subdomain.** This path-based layout is provided as a no-DNS workaround.
 
 ---
 
@@ -38,26 +58,13 @@ internal Supabase service stays on the private `tracktreck` Docker network.
 1. Create a Hetzner **CX33 or larger** (Ubuntu 24.04 LTS). See §12 for sizing.
    CX23 boots but is **MVP-only** — see the warning at the bottom.
 2. Add your SSH key.
-3. Note the public IPv4.
-
-### DNS
-
-Create A records (TTL 300s) pointing to the VPS IP:
-
-| Subdomain                  | Purpose            |
-| -------------------------- | ------------------ |
-| `admin.example.com`        | Frontend / admin   |
-| `n8n.example.com`          | n8n editor         |
-| `api.example.com`          | Evolution API      |
-| `supabase.example.com`     | Supabase gateway   |
-
-No domain yet? Use `sslip.io`:
-`supabase.<your.vps.ip>.sslip.io` — resolves to your IP without any DNS setup.
+3. Note the public IPv4 — that IP becomes `PUBLIC_HOST` in `.env`. No DNS
+   required.
 
 ### Hetzner firewall
 
-Allow inbound TCP only on **22** (your IP), **80**, **443**. Block everything
-else. (Or use `ufw` — see step 2.)
+Allow inbound TCP only on **22** (your IP) and **80**. Block everything else.
+(Or use `ufw` — see step 2.) Port 443 is unused for now (HTTP-only).
 
 ---
 
@@ -74,7 +81,6 @@ sudo apt update && sudo apt -y upgrade
 sudo apt -y install ufw jq openssl
 sudo ufw allow OpenSSH
 sudo ufw allow 80
-sudo ufw allow 443
 sudo ufw --force enable
 
 # 2 GB swap (REQUIRED on CX23, recommended on CX33)
@@ -182,10 +188,10 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 First run will:
-- build the frontend image,
+- build the frontend image (Vite base is hard-coded to `/admin/`),
 - pull Supabase / n8n / Evolution / Caddy images,
 - initialize both Postgres clusters,
-- request Let's Encrypt certificates for the four hostnames.
+- start Caddy on `:80` with path-based routes (no TLS / no Let's Encrypt yet).
 
 ### If supabase-auth or supabase-storage crash on first boot
 
@@ -215,18 +221,18 @@ prototype** — before real end-users, replace `anon_admin_access` with
 role-aware policies and split read vs write per role. `schema_migrations`
 is intentionally left untouched (internal).
 
-Watch Caddy until certs are issued:
+Tail Caddy to confirm it picked up the four path routes:
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f caddy
 ```
 
-Then visit:
-- `https://admin.example.com` — admin UI
-- `https://n8n.example.com` — n8n (Basic Auth)
-- `https://api.example.com/manager` — Evolution manager
-- `https://supabase.example.com` — Supabase Studio (Basic Auth via Kong)
-- `https://supabase.example.com/rest/v1/`, `/auth/v1/`, `/storage/v1/` — APIs
+Then visit (substitute your VPS IP for `157.90.166.243`):
+- `http://157.90.166.243/admin` — admin UI
+- `http://157.90.166.243/n8n` — n8n (Basic Auth)
+- `http://157.90.166.243/api/manager` — Evolution manager
+- `http://157.90.166.243/supabase` — Supabase Studio (Basic Auth via Kong) — see the warning at the top of this doc about Studio's quirks under path-based routing
+- `http://157.90.166.243/supabase/rest/v1/`, `/supabase/auth/v1/`, `/supabase/storage/v1/` — APIs
 
 The default `travel-offer-assets` storage bucket is created idempotently by
 `scripts/bootstrap-supabase-db.sh` (run it once after the first `up`).
@@ -437,7 +443,7 @@ year of Storage growth. This is the **minimum** you should run for real users.
 - [ ] `.env` is **not** tracked (`git status` / `git check-ignore -v .env`)
 - [ ] No real keys committed: `git grep -nE "eyJ|change_me|sb_secret_" -- :!.env.example :!README_DEPLOYMENT.md`
 - [ ] `.env.example` only has `change_me` / placeholder values
-- [ ] DNS A records point to the VPS for app / n8n / api / supabase hosts
+- [ ] `PUBLIC_HOST` in `.env` matches the VPS public IPv4 (no DNS needed)
 - [ ] Strong values set for `SUPABASE_JWT_SECRET`, `SUPABASE_DB_PASSWORD`, `STUDIO_PASSWORD`, `N8N_ENCRYPTION_KEY`, `EVOLUTION_API_KEY`
 - [ ] `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` regenerated **after** picking `SUPABASE_JWT_SECRET`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` stored as n8n credential (not in build args)
@@ -453,34 +459,43 @@ year of Storage growth. This is the **minimum** you should run for real users.
 # All containers up & healthy
 docker compose -f docker-compose.prod.yml ps
 
-# Only 80/443 listen publicly
+# Only :80 listens publicly (443 is unused for now)
 sudo ss -tlnp | grep -E "LISTEN.*0\.0\.0\.0|LISTEN.*\[::\]"
 
-# Certs issued
-docker compose -f docker-compose.prod.yml logs caddy | grep -iE "certificate|error" | tail
+# Caddy started cleanly
+docker compose -f docker-compose.prod.yml logs caddy | grep -iE "error|serving" | tail
 
-# Each public host responds
-for H in $APP_HOST $N8N_HOST $EVOLUTION_HOST $SUPABASE_HOST; do
-  curl -sS -o /dev/null -w "$H -> %{http_code}\n" "https://$H"
-done
+# --- Path-based smoke tests (replace IP with your VPS) -------------------
+BASE=http://157.90.166.243
 
-# Quick smoke test (example with the sslip.io hostnames used in our deploy)
-curl -I https://admin.157.90.166.243.sslip.io
-curl -I https://n8n.157.90.166.243.sslip.io
-curl -I https://api.157.90.166.243.sslip.io
-curl -I -u "$STUDIO_USERNAME:$STUDIO_PASSWORD" https://supabase.157.90.166.243.sslip.io
-# Expected for Supabase Studio behind Kong Basic Auth:
-#   HTTP/2 307
-#   location: /project/default
+# Admin SPA (Vite, base=/admin/)
+curl -I $BASE/admin/                # 200 OK, content-type text/html
+curl -I $BASE/admin/assets/         # 403 / 404 is fine; just confirms route lives
+
+# n8n (Basic Auth — 401 expected without creds)
+curl -I $BASE/n8n/                  # 401 (Basic Auth) — proves n8n received /n8n/
+
+# Evolution API root (welcome JSON / 200)
+curl -sS $BASE/api/                 # JSON welcome payload
+
+# Supabase Kong gateway (Studio Basic Auth — 401 expected without creds)
+curl -I $BASE/supabase/             # 401 Basic Auth via Kong
+curl -I -u "$STUDIO_USERNAME:$STUDIO_PASSWORD" $BASE/supabase/
+# Expected with creds:
+#   HTTP/1.1 307
+#   location: /project/default     (note: Studio emits an absolute redirect
+#                                   that does NOT include /supabase — this is
+#                                   the path-based-routing fragility called
+#                                   out at the top of this doc.)
 
 # Supabase REST is wired
-curl -sS "https://$SUPABASE_HOST/rest/v1/" -H "apikey: $SUPABASE_ANON_KEY" | head
+curl -sS "$BASE/supabase/rest/v1/" -H "apikey: $SUPABASE_ANON_KEY" | head
 
 # Supabase Auth health
-curl -sS "https://$SUPABASE_HOST/auth/v1/health" -H "apikey: $SUPABASE_ANON_KEY"
+curl -sS "$BASE/supabase/auth/v1/health" -H "apikey: $SUPABASE_ANON_KEY"
 
 # Storage list (bucket must exist)
-curl -sS "https://$SUPABASE_HOST/storage/v1/bucket" \
+curl -sS "$BASE/supabase/storage/v1/bucket" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"
 
@@ -501,9 +516,9 @@ df -h /
 Expected:
 
 - [ ] every service `Up (healthy)` where healthchecks are defined
-- [ ] only `:80` and `:443` listening on the public interface
-- [ ] Caddy logs `certificate obtained successfully` for all four hostnames
-- [ ] all four hosts return HTTP 200 / 401 (not 502)
+- [ ] only `:80` listening on the public interface
+- [ ] Caddy logs show all four routes registered (no parse errors)
+- [ ] all four public paths return HTTP 200 / 401 (not 502)
 - [ ] REST returns Swagger JSON, Auth returns `{"description":"GoTrue...","name":"GoTrue"...}`
 - [ ] Storage `bucket` call returns an array with `travel-offer-assets`
 - [ ] `OK_NO_SERVICE_ROLE` and `OK_NO_LOCALHOST` print
@@ -579,7 +594,7 @@ These must be rewritten to the VPS URL **only after the actual files have
 been uploaded to the new bucket**:
 
 ```
-https://supabase.<your-host>/storage/v1/object/public/...
+http://157.90.166.243/supabase/storage/v1/object/public/...
 ```
 
 This is a **manual** task — do not run a destructive `UPDATE` until file
@@ -594,7 +609,7 @@ migration is confirmed. Suggested workflow:
    UPDATE <table>
    SET <col> = replace(<col>,
                        'http://host.docker.internal:54321',
-                       'https://supabase.<your-host>')
+                       'http://157.90.166.243/supabase')
    WHERE <col> LIKE 'http://host.docker.internal%';
    -- inspect, then COMMIT (or ROLLBACK).
    ```
@@ -610,11 +625,11 @@ SERVICE_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' .env | cut -d '=' -f2-)
 curl -i \
   -H "apikey: $SERVICE_KEY" \
   -H "Authorization: Bearer $SERVICE_KEY" \
-  "https://supabase.<your-host>/storage/v1/bucket"
+  "http://157.90.166.243/supabase/storage/v1/bucket"
 ```
 
 Expected:
-- `HTTP/2 200` and a JSON array.
+- `HTTP/1.1 200` and a JSON array.
 - After the first run of `scripts/bootstrap-supabase-db.sh` (or manual
   creation), the array contains the `travel-offer-assets` bucket.
 - Empty `[]` is fine before any bucket is created — it means Storage itself
@@ -652,9 +667,9 @@ Expected services:
 
 End-to-end smoke checks:
 
-- [ ] Admin app loads offers (`https://admin.<host>` → list renders, no console errors)
-- [ ] Supabase Studio opens (`https://supabase.<host>` → Basic Auth then dashboard)
+- [ ] Admin app loads offers (`http://157.90.166.243/admin` → list renders, no console errors)
+- [ ] Supabase Studio opens (`http://157.90.166.243/supabase` → Basic Auth, then dashboard) — see Studio fragility warning at the top
 - [ ] Studio Table Editor shows `public` tables
 - [ ] Studio Storage shows `travel-offer-assets` bucket
-- [ ] `curl https://api.<host>/` returns Evolution welcome JSON
-- [ ] `https://n8n.<host>` shows the n8n login page (after Basic Auth)
+- [ ] `curl http://157.90.166.243/api/` returns Evolution welcome JSON
+- [ ] `http://157.90.166.243/n8n` shows the n8n login page (after Basic Auth)
