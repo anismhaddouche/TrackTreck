@@ -1,11 +1,33 @@
 import { getSupabase, STORAGE_BUCKET } from "./supabase";
 import { slugify } from "./utils";
 
-export type ResolveStatus =
-  | "ok"
-  | "no-source"
-  | "listing-blocked"
-  | "no-anchor";
+// =============================================================================
+// Source resolver for the admin "Source originale" panel.
+//
+// Strategy (intentionally minimal — see commit notes):
+//   1. The offer row in Postgres already carries the source-of-truth list of
+//      uploaded image URLs in `tours.photo_urls`. Each URL points to a real,
+//      reachable object in the `travel-offer-assets` bucket.
+//   2. We extract the object path from each photo URL and rebuild a fresh
+//      public URL (no network call — getPublicUrl is synchronous).
+//   3. The n8n ingestion workflow stores siblings of those images in the same
+//      parent prefix (e.g. caption.txt, 01.pdf, source.pdf). We probe ONLY the
+//      unique parent prefixes derived from photo_urls, and ONLY a handful of
+//      well-known names.
+//   4. All probes go through a module-level cache, keyed by absolute URL, so
+//      a path is fetched at most once for the lifetime of the page.
+//
+// What we DO NOT do anymore:
+//   - call supabase.storage.list() (anon RLS commonly forbids LIST → 400).
+//   - brute-force candidate prefixes from country/agency/title slugs.
+//   - re-probe the same path on every render / route change.
+//   - retry the same 4xx response.
+//
+// Public surface (kept compatible with existing consumers):
+//   resolveOfferSource, inferSourceLabelFromPhotoUrls, isDefaultAgencyName.
+// =============================================================================
+
+export type ResolveStatus = "ok" | "no-source" | "no-anchor" | "listing-blocked";
 
 export interface ResolvedAsset {
   url: string;
@@ -37,20 +59,31 @@ interface ResolveInput {
   photoUrls: string[] | null;
 }
 
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
-const MAX_RECURSION_DEPTH = 3;
-const LIST_LIMIT = 200;
+interface ResolveOptions {
+  signal?: AbortSignal;
+}
 
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
 const PDF_EXT = /\.pdf$/i;
-const TEXT_EXT = /\.(txt|json|md)$/i;
 
-function classify(name: string): ResolvedAsset["kind"] | null {
-  if (IMAGE_EXT.test(name)) return "image";
-  if (PDF_EXT.test(name)) return "pdf";
-  if (TEXT_EXT.test(name) || /caption/i.test(name)) return "text";
-  return null;
-}
+// Cap how many distinct parent prefixes we probe. Almost every offer has 1.
+const MAX_PREFIXES = 5;
+
+// Well-known sibling filenames written by the n8n workflow.
+const CAPTION_CANDIDATES = ["caption.txt"];
+const PDF_CANDIDATES = ["01.pdf", "source.pdf", "offer.pdf", "document.pdf"];
+
+// -----------------------------------------------------------------------------
+// Module-level cache. Survives across offer changes within the same SPA load,
+// so navigating offer-A → offer-B → offer-A does not re-probe anything.
+// -----------------------------------------------------------------------------
+type ProbeResult = "ok" | "missing";
+const headCache = new Map<string, Promise<ProbeResult>>();
+const captionCache = new Map<string, Promise<string | null>>();
+
+// -----------------------------------------------------------------------------
+// Public helpers retained for use outside the panel.
+// -----------------------------------------------------------------------------
 
 export function normalizeCountrySlug(country: string): string {
   const slug = slugify(country);
@@ -60,54 +93,99 @@ export function normalizeCountrySlug(country: string): string {
   return slug;
 }
 
-export function extractBucketPath(value: string): string | null {
-  const marker = `/${STORAGE_BUCKET}/`;
-  const markerIndex = value.indexOf(marker);
-  if (markerIndex >= 0) {
-    return cleanObjectPath(value.slice(markerIndex + marker.length));
-  }
-
-  const plainMarker = `${STORAGE_BUCKET}/`;
-  const plainMarkerIndex = value.indexOf(plainMarker);
-  if (plainMarkerIndex >= 0) {
-    return cleanObjectPath(
-      value.slice(plainMarkerIndex + plainMarker.length),
-    );
-  }
-
-  const encodedMarker = `/${encodeURIComponent(STORAGE_BUCKET)}/`;
-  const encodedMarkerIndex = value.indexOf(encodedMarker);
-  if (encodedMarkerIndex >= 0) {
-    return cleanObjectPath(value.slice(encodedMarkerIndex + encodedMarker.length));
-  }
-
-  return null;
+export function isDefaultAgencyName(name: string | null | undefined): boolean {
+  return !name || name.trim().toLowerCase() === "default agency";
 }
 
 export function inferSourceLabelFromPhotoUrls(
   photoUrls: string[] | null | undefined,
 ): string | null {
   for (const url of photoUrls ?? []) {
-    const path = extractBucketPath(url);
+    const path = extractObjectPath(url);
     if (!path) continue;
     const parts = path.split("/").filter(Boolean);
     const candidate =
-      parts.length >= 3 ? parts[parts.length - 3] : parts.length >= 2 ? parts[1] : null;
+      parts.length >= 3
+        ? parts[parts.length - 3]
+        : parts.length >= 2
+          ? parts[1]
+          : null;
     const label = candidate ? labelFromSlug(candidate) : null;
     if (label) return label;
   }
   return null;
 }
 
-export function isDefaultAgencyName(name: string | null | undefined): boolean {
-  return !name || name.trim().toLowerCase() === "default agency";
+// -----------------------------------------------------------------------------
+// Path normalization. Accepts:
+//   - a fully-qualified public/signed URL
+//     (.../storage/v1/object/{public,sign}/<bucket>/<path>...)
+//   - a bucket-prefixed path: "travel-offer-assets/foo/bar.jpg"
+//   - a bare object path:     "foo/bar.jpg" (returned as-is)
+// Returns null for empty / invalid input.
+// -----------------------------------------------------------------------------
+export function extractObjectPath(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const stripQueryAndHash = (s: string): string =>
+    (s.split("#")[0] ?? "").split("?")[0] ?? "";
+
+  const tryDecode = (s: string): string => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  };
+
+  const normalize = (p: string): string | null => {
+    const clean = stripQueryAndHash(p).replace(/^\/+/, "");
+    return clean.length > 0 ? clean : null;
+  };
+
+  // Marker patterns Supabase Storage uses, in priority order.
+  const markers = [
+    `/storage/v1/object/sign/${STORAGE_BUCKET}/`,
+    `/storage/v1/object/public/${STORAGE_BUCKET}/`,
+    `/storage/v1/object/${STORAGE_BUCKET}/`,
+    `/${STORAGE_BUCKET}/`,
+  ];
+  for (const marker of markers) {
+    const idx = trimmed.indexOf(marker);
+    if (idx >= 0) {
+      return normalize(tryDecode(trimmed.slice(idx + marker.length)));
+    }
+  }
+
+  // Plain prefix without leading slash (e.g. from a stored relative path).
+  const plain = `${STORAGE_BUCKET}/`;
+  if (trimmed.startsWith(plain)) {
+    return normalize(tryDecode(trimmed.slice(plain.length)));
+  }
+
+  // No bucket marker — treat as bare object path only if there's no scheme.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return null;
+  return normalize(tryDecode(trimmed));
 }
 
-function cleanObjectPath(value: string): string | null {
-  const withoutHash = value.split("#")[0] ?? "";
-  const withoutQuery = withoutHash.split("?")[0] ?? "";
-  const decoded = decodeURIComponent(withoutQuery).replace(/^\/+/, "");
-  return decoded.length > 0 ? decoded : null;
+// Back-compat re-export: older callers may still import this name.
+export const extractBucketPath = extractObjectPath;
+
+// -----------------------------------------------------------------------------
+// Internal helpers.
+// -----------------------------------------------------------------------------
+
+function dirname(path: string): string | null {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return null;
+  return parts.slice(0, -1).join("/");
+}
+
+function basename(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 function labelFromSlug(slug: string): string | null {
@@ -121,344 +199,158 @@ function labelFromSlug(slug: string): string | null {
     .join(" ");
 }
 
-function uniq(arr: string[]): string[] {
-  return Array.from(new Set(arr.filter((s) => s && s.length > 0)));
+function uniq<T>(arr: T[]): T[] {
+  return Array.from(new Set(arr));
 }
 
-function dirname(path: string): string | null {
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length <= 1) return null;
-  return parts.slice(0, -1).join("/");
-}
-
-function getParentPrefix(path: string): string | null {
-  const dir = dirname(path);
-  return dir ? `${dir}/` : null;
-}
-
-function basename(path: string): string {
-  const parts = path.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
-function addNumberedFolders(candidates: string[], prefix: string): void {
-  candidates.push(prefix);
-  candidates.push(`${prefix}/01`);
-  candidates.push(`${prefix}/02`);
-}
-
-function addKnownSourceFolderVariants(
-  candidates: string[],
-  countrySlug: string | null,
-  titleSlug: string | null,
-): void {
-  if (!countrySlug || !titleSlug) return;
-
-  if (titleSlug.includes("kuala-lumpur")) {
-    addNumberedFolders(candidates, `${countrySlug}/kuala-lumpur-city-tour`);
-  }
-}
-
-function buildAnchors(photoUrls: string[] | null): {
-  paths: string[];
-  prefixes: string[];
-  sourceSlug: string | null;
-} {
-  const paths: string[] = [];
-  const prefixes: string[] = [];
-  let sourceSlug: string | null = null;
-
-  for (const url of photoUrls ?? []) {
-    const path = extractBucketPath(url);
-    if (!path) continue;
-    paths.push(path);
-
-    const folder = getParentPrefix(path);
-    if (folder) prefixes.push(folder);
-
-    const parts = path.split("/").filter(Boolean);
-    if (parts.length >= 3) sourceSlug = sourceSlug ?? parts[1];
-  }
-
-  return {
-    paths: uniq(paths),
-    prefixes: uniq(prefixes),
-    sourceSlug,
-  };
-}
-
-function buildCandidatePrefixes(input: ResolveInput): string[] {
-  const candidates: string[] = [];
-  const country = (input.countries ?? []).find(
-    (c) => typeof c === "string" && c.trim().length > 0,
-  );
-  const countrySlug = country ? normalizeCountrySlug(country) : null;
-  const agencyId = input.agencyId;
-  const agencySlug = input.agencyName ? slugify(input.agencyName) : null;
-  const titleSlug = input.title ? slugify(input.title) : null;
-  const anchors = buildAnchors(input.photoUrls);
-
-  candidates.push(...anchors.prefixes);
-
-  if (countrySlug && anchors.sourceSlug) {
-    addNumberedFolders(candidates, `${countrySlug}/${anchors.sourceSlug}`);
-  }
-
-  if (countrySlug && titleSlug) {
-    addNumberedFolders(candidates, `${countrySlug}/${titleSlug}`);
-    addKnownSourceFolderVariants(candidates, countrySlug, titleSlug);
-  }
-
-  if (countrySlug && agencySlug && !isDefaultAgencyName(input.agencyName)) {
-    addNumberedFolders(candidates, `${countrySlug}/${agencySlug}`);
-  }
-
-  if (countrySlug && agencyId !== null) {
-    candidates.push(`${countrySlug}/agency-${agencyId}`);
-    candidates.push(`${countrySlug}/agency-${agencyId}/images`);
-    candidates.push(`${countrySlug}/agency-${agencyId}/pdf`);
-  }
-
-  if (agencyId !== null) {
-    candidates.push(`incoming/agency-${agencyId}/images`);
-    candidates.push(`incoming/agency-${agencyId}/pdf`);
-  }
-
-  return uniq(candidates);
-}
-
-function normalizePrefix(prefix: string): string {
-  return prefix.replace(/\/+$/, "");
-}
-
-interface ListedFile {
-  prefix: string;
-  name: string;
-  fullPath: string;
-}
-
-interface ListResult {
-  files: ListedFile[];
-  folders: string[];
-  blocked: boolean;
-}
-
-async function listPrefix(prefix: string): Promise<ListResult> {
+function getPublicUrl(objectPath: string): string | null {
+  if (!objectPath) return null;
   const supabase = getSupabase();
-  const normalizedPrefix = normalizePrefix(prefix);
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .list(normalizedPrefix, {
-      limit: LIST_LIMIT,
-      sortBy: { column: "name", order: "asc" },
-    });
-
-  if (error) return { files: [], folders: [], blocked: true };
-
-  const files: ListedFile[] = [];
-  const folders: string[] = [];
-
-  for (const entry of data ?? []) {
-    const fullPath = normalizedPrefix
-      ? `${normalizedPrefix}/${entry.name}`
-      : entry.name;
-    if (classify(entry.name)) {
-      files.push({ prefix: normalizedPrefix, name: entry.name, fullPath });
-    } else {
-      folders.push(fullPath);
-    }
-  }
-
-  return { files, folders, blocked: false };
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
+  return data.publicUrl || null;
 }
 
-async function walkPrefix(
-  prefix: string,
-  depth: number,
-  acc: ListedFile[],
-  blockedFlag: { value: boolean },
-  successFlag: { value: boolean },
-): Promise<void> {
-  if (depth > MAX_RECURSION_DEPTH) return;
-
-  const result = await listPrefix(prefix);
-  if (result.blocked) {
-    blockedFlag.value = true;
-    return;
-  }
-
-  successFlag.value = true;
-  acc.push(...result.files);
-
-  for (const folder of result.folders) {
-    await walkPrefix(folder, depth + 1, acc, blockedFlag, successFlag);
-  }
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
 }
 
-async function resolveAssetUrl(path: string): Promise<string | null> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+// One HEAD per unique URL, ever. Cache the verdict.
+async function probeHead(url: string, signal?: AbortSignal): Promise<ProbeResult> {
+  const cached = headCache.get(url);
+  if (cached) return cached;
 
-  if (!error && data?.signedUrl) return data.signedUrl;
-
-  return getPublicAssetUrl(path);
-}
-
-function getPublicAssetUrl(path: string): string | null {
-  const supabase = getSupabase();
-  const publicResult = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-  return publicResult.data.publicUrl || null;
-}
-
-async function downloadText(path: string, url: string | null): Promise<string | null> {
-  try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .download(path);
-    if (!error && data) return formatTextContent(path, await data.text());
-  } catch {
-    // Try the resolved URL below.
-  }
-
-  const publicUrl = getPublicAssetUrl(path);
-  const urls = uniq([url ?? "", publicUrl ?? ""]);
-
-  for (const candidateUrl of urls) {
+  const promise = (async (): Promise<ProbeResult> => {
     try {
-      const response = await fetch(candidateUrl);
-      if (!response.ok) continue;
-      return formatTextContent(path, await response.text());
-    } catch {
-      // Try the next URL candidate.
+      const res = await fetch(url, { method: "HEAD", signal });
+      return res.ok ? "ok" : "missing";
+    } catch (err) {
+      if (isAbortError(err)) {
+        // Don't poison the cache on abort — let a future call retry.
+        headCache.delete(url);
+        throw err;
+      }
+      return "missing";
     }
+  })();
+
+  headCache.set(url, promise);
+  return promise;
+}
+
+// One GET per unique caption URL, ever. Returns the text body or null.
+async function fetchCaption(url: string, signal?: AbortSignal): Promise<string | null> {
+  const cached = captionCache.get(url);
+  if (cached) return cached;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      const res = await fetch(url, { signal });
+      if (!res.ok) return null;
+      return await res.text();
+    } catch (err) {
+      if (isAbortError(err)) {
+        captionCache.delete(url);
+        throw err;
+      }
+      return null;
+    }
+  })();
+
+  captionCache.set(url, promise);
+  return promise;
+}
+
+interface Anchor {
+  objectPath: string;
+  parentPrefix: string | null;
+}
+
+function buildAnchors(photoUrls: string[] | null | undefined): Anchor[] {
+  const seen = new Set<string>();
+  const anchors: Anchor[] = [];
+  for (const url of photoUrls ?? []) {
+    const objectPath = extractObjectPath(url);
+    if (!objectPath || seen.has(objectPath)) continue;
+    seen.add(objectPath);
+    anchors.push({ objectPath, parentPrefix: dirname(objectPath) });
   }
-
-  return null;
+  return anchors;
 }
 
-async function urlResponds(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(url, { method: "HEAD" });
-    if (response.ok) return true;
-  } catch {
-    // Try a lightweight GET below.
-  }
-
-  try {
-    const response = await fetch(url, {
-      headers: { Range: "bytes=0-0" },
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+interface ResolvedCaption {
+  text: string | null;
+  asset: ResolvedAsset | null;
+  failedPaths: string[];
 }
 
-function formatTextContent(path: string, raw: string): string {
-  if (!/\.json$/i.test(path)) return raw;
-
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
-}
-
-function textPriority(name: string): number {
-  if (/^caption\.txt$/i.test(name)) return 0;
-  if (/caption/i.test(name)) return 1;
-  if (/\.txt$/i.test(name)) return 2;
-  if (/\.md$/i.test(name)) return 3;
-  return 4;
-}
-
-function pdfPriority(name: string): number {
-  if (/^offer\.pdf$/i.test(name)) return 0;
-  if (/offer|source|brochure/i.test(name)) return 1;
-  return 2;
-}
-
-function addDirectAnchorFiles(input: ResolveInput, files: ListedFile[]): void {
-  for (const path of buildAnchors(input.photoUrls).paths) {
-    const kind = classify(path);
-    if (!kind) continue;
-    files.push({
-      prefix: dirname(path) ?? "",
-      name: basename(path),
-      fullPath: path,
-    });
-  }
-}
-
-async function findKnownSiblingTextFiles(
+async function resolveCaption(
   prefixes: string[],
-  existingPaths: Set<string>,
-): Promise<Array<{ file: ListedFile; text: string }>> {
-  const found: Array<{ file: ListedFile; text: string }> = [];
+  signal: AbortSignal | undefined,
+): Promise<ResolvedCaption> {
+  const failedPaths: string[] = [];
 
-  for (const rawPrefix of prefixes) {
-    const prefix = normalizePrefix(rawPrefix);
-    const path = `${prefix}/caption.txt`;
-    if (existingPaths.has(path)) continue;
-
-    const url = await resolveAssetUrl(path);
-    const text = await downloadText(path, url);
-    if (text === null) continue;
-
-    found.push({
-      file: {
-        prefix,
-        name: "caption.txt",
-        fullPath: path,
-      },
-      text,
-    });
-  }
-
-  return found;
-}
-
-function knownPdfSiblingNames(prefix: string): string[] {
-  const segment = basename(prefix);
-  return uniq([`${segment}.pdf`, "01.pdf", "source.pdf", "document.pdf", "offer.pdf"]);
-}
-
-async function findKnownSiblingPdfFiles(
-  prefixes: string[],
-  existingPaths: Set<string>,
-): Promise<Array<{ file: ListedFile; url: string }>> {
-  const found: Array<{ file: ListedFile; url: string }> = [];
-
-  for (const rawPrefix of prefixes) {
-    const prefix = normalizePrefix(rawPrefix);
-    for (const name of knownPdfSiblingNames(prefix)) {
+  for (const prefix of prefixes) {
+    for (const name of CAPTION_CANDIDATES) {
+      if (signal?.aborted) return { text: null, asset: null, failedPaths };
       const path = `${prefix}/${name}`;
-      if (existingPaths.has(path)) continue;
+      const url = getPublicUrl(path);
+      if (!url) continue;
 
-      const url = await resolveAssetUrl(path);
-      if (!url || !(await urlResponds(url))) continue;
-
-      found.push({
-        file: {
-          prefix,
-          name,
-          fullPath: path,
-        },
-        url,
-      });
-      existingPaths.add(path);
+      const text = await fetchCaption(url, signal);
+      if (text !== null) {
+        return {
+          text,
+          asset: { url, path, name, kind: "text" },
+          failedPaths,
+        };
+      }
+      failedPaths.push(path);
     }
   }
-
-  return found;
+  return { text: null, asset: null, failedPaths };
 }
+
+interface ResolvedPdf {
+  asset: ResolvedAsset | null;
+  failedPaths: string[];
+}
+
+async function resolvePdf(
+  prefixes: string[],
+  signal: AbortSignal | undefined,
+): Promise<ResolvedPdf> {
+  const failedPaths: string[] = [];
+
+  for (const prefix of prefixes) {
+    for (const name of PDF_CANDIDATES) {
+      if (signal?.aborted) return { asset: null, failedPaths };
+      const path = `${prefix}/${name}`;
+      const url = getPublicUrl(path);
+      if (!url) continue;
+
+      const verdict = await probeHead(url, signal);
+      if (verdict === "ok") {
+        return {
+          asset: { url, path, name, kind: "pdf" },
+          failedPaths,
+        };
+      }
+      failedPaths.push(path);
+    }
+  }
+  return { asset: null, failedPaths };
+}
+
+// -----------------------------------------------------------------------------
+// Entry point.
+// -----------------------------------------------------------------------------
 
 export async function resolveOfferSource(
   input: ResolveInput,
+  options: ResolveOptions = {},
 ): Promise<ResolvedSource> {
+  const { signal } = options;
+
   const empty: ResolvedSource = {
     status: "no-source",
     imageUrls: [],
@@ -472,143 +364,111 @@ export async function resolveOfferSource(
     hasAny: false,
   };
 
-  const prefixes = buildCandidatePrefixes(input);
-  const allFiles: ListedFile[] = [];
-  const blocked = { value: false };
-  const success = { value: false };
+  const anchors = buildAnchors(input.photoUrls);
 
-  addDirectAnchorFiles(input, allFiles);
-
-  if (prefixes.length === 0 && allFiles.length === 0) {
+  if (anchors.length === 0) {
+    console.info("[source-resolver] resolving source", {
+      offerId: input.offerId,
+      bucket: STORAGE_BUCKET,
+      candidateCount: 0,
+      candidates: [],
+    });
     return { ...empty, status: "no-anchor" };
   }
 
-  for (const prefix of prefixes) {
-    await walkPrefix(prefix, 0, allFiles, blocked, success);
-    if (
-      allFiles.some((f) => IMAGE_EXT.test(f.name)) &&
-      allFiles.some((f) => PDF_EXT.test(f.name)) &&
-      allFiles.some((f) => classify(f.name) === "text")
-    ) {
-      break;
-    }
-  }
+  // Unique parent prefixes from the anchor paths. Capped — almost every offer
+  // has exactly one prefix (all photos in the same folder).
+  const prefixes = uniq(
+    anchors.map((a) => a.parentPrefix).filter((p): p is string => Boolean(p)),
+  ).slice(0, MAX_PREFIXES);
 
-  const byPath = new Map<string, ListedFile>();
-  for (const file of allFiles) {
-    if (!byPath.has(file.fullPath)) byPath.set(file.fullPath, file);
-  }
+  console.info("[source-resolver] resolving source", {
+    offerId: input.offerId,
+    bucket: STORAGE_BUCKET,
+    candidateCount: prefixes.length,
+    candidates: prefixes,
+  });
 
-  const anchors = buildAnchors(input.photoUrls);
-  const textContentByPath = new Map<string, string>();
-  const knownSiblingTexts = await findKnownSiblingTextFiles(
-    prefixes.length > 0 ? prefixes : anchors.prefixes,
-    new Set(byPath.keys()),
-  );
-  for (const sibling of knownSiblingTexts) {
-    if (!byPath.has(sibling.file.fullPath)) {
-      byPath.set(sibling.file.fullPath, sibling.file);
-    }
-    textContentByPath.set(sibling.file.fullPath, sibling.text);
-  }
+  // Image URLs are derived directly from the stored anchors — no network.
+  const imageUrls = anchors
+    .filter((a) => IMAGE_EXT.test(a.objectPath))
+    .map((a) => getPublicUrl(a.objectPath))
+    .filter((u): u is string => Boolean(u));
 
-  const pdfUrlByPath = new Map<string, string>();
-  const knownSiblingPdfs = await findKnownSiblingPdfFiles(
-    prefixes.length > 0 ? prefixes : anchors.prefixes,
-    new Set(byPath.keys()),
-  );
-  for (const sibling of knownSiblingPdfs) {
-    if (!byPath.has(sibling.file.fullPath)) {
-      byPath.set(sibling.file.fullPath, sibling.file);
-    }
-    pdfUrlByPath.set(sibling.file.fullPath, sibling.url);
-  }
+  // If photo_urls already contained the PDF (rare but possible), pick it up
+  // without a HEAD probe.
+  const pdfAnchor =
+    anchors.find((a) => PDF_EXT.test(a.objectPath)) ?? null;
 
-  if (byPath.size === 0) {
-    if (blocked.value && !success.value) {
-      return {
-        ...empty,
-        status: "listing-blocked",
-        message:
-          "Impossible de charger les fichiers sources. Verifiez les politiques Storage ou les chemins des assets.",
-        probedPrefixes: prefixes,
-      };
+  try {
+    const [captionResult, pdfResult] = await Promise.all([
+      resolveCaption(prefixes, signal),
+      pdfAnchor
+        ? Promise.resolve<ResolvedPdf>({
+            asset: {
+              url: getPublicUrl(pdfAnchor.objectPath) ?? "",
+              path: pdfAnchor.objectPath,
+              name: basename(pdfAnchor.objectPath),
+              kind: "pdf",
+            },
+            failedPaths: [],
+          })
+        : resolvePdf(prefixes, signal),
+    ]);
+
+    if (signal?.aborted) return empty;
+
+    const textFiles: ResolvedAsset[] = captionResult.asset
+      ? [captionResult.asset]
+      : [];
+
+    const hasAny =
+      imageUrls.length > 0 ||
+      pdfResult.asset !== null ||
+      (captionResult.text?.length ?? 0) > 0;
+
+    const failedCount =
+      captionResult.failedPaths.length + pdfResult.failedPaths.length;
+    if (failedCount > 0) {
+      // One clean line per offer summarising what we could not find. Each
+      // individual 404/400 is silent on the network — the cache prevents repeats.
+      console.info("[source-resolver] failed candidates", {
+        offerId: input.offerId,
+        caption: captionResult.failedPaths,
+        pdf: pdfResult.failedPaths,
+      });
     }
+
+    console.info("[source-resolver] resolved", {
+      offerId: input.offerId,
+      imageCount: imageUrls.length,
+      hasCaption: captionResult.text !== null,
+      hasPdf: pdfResult.asset !== null,
+    });
+
+    return {
+      status: hasAny ? "ok" : "no-source",
+      imageUrls,
+      pdfUrl: pdfResult.asset?.url ?? null,
+      pdfPath: pdfResult.asset?.path ?? null,
+      pdfName: pdfResult.asset?.name ?? null,
+      captionText: captionResult.text,
+      captionError:
+        captionResult.text === null && captionResult.failedPaths.length > 0
+          ? null
+          : null,
+      textFiles,
+      probedPrefixes: prefixes,
+      hasAny,
+    };
+  } catch (err) {
+    if (isAbortError(err)) {
+      return empty;
+    }
+    console.warn("[source-resolver] unexpected error", {
+      offerId: input.offerId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { ...empty, probedPrefixes: prefixes };
   }
-
-  const images: ListedFile[] = [];
-  const pdfs: ListedFile[] = [];
-  const texts: ListedFile[] = [];
-
-  for (const file of byPath.values()) {
-    const kind = classify(file.name);
-    if (kind === "image") images.push(file);
-    if (kind === "pdf") pdfs.push(file);
-    if (kind === "text") texts.push(file);
-  }
-
-  images.sort((a, b) => a.name.localeCompare(b.name));
-  texts.sort((a, b) => textPriority(a.name) - textPriority(b.name));
-  pdfs.sort((a, b) => pdfPriority(a.name) - pdfPriority(b.name));
-
-  const imageUrls = (
-    await Promise.all(images.map((file) => resolveAssetUrl(file.fullPath)))
-  ).filter((url): url is string => Boolean(url));
-
-  const preferredPdf = pdfs[0] ?? null;
-  const pdfUrl = preferredPdf
-    ? (pdfUrlByPath.get(preferredPdf.fullPath) ??
-      (await resolveAssetUrl(preferredPdf.fullPath)))
-    : null;
-
-  const textFiles: ResolvedAsset[] = [];
-  let captionText: string | null = null;
-  let captionError: string | null = null;
-  for (const textFile of texts) {
-    const url = await resolveAssetUrl(textFile.fullPath);
-    textFiles.push({
-      url: url ?? "",
-      path: textFile.fullPath,
-      name: textFile.name,
-      kind: "text",
-    });
-    if (!captionText) {
-      captionText =
-        textContentByPath.get(textFile.fullPath) ??
-        (await downloadText(textFile.fullPath, url));
-      if (!captionText) {
-        captionError = "Impossible de charger le texte source.";
-      }
-    }
-  }
-
-  const hasAny =
-    imageUrls.length > 0 ||
-    pdfUrl !== null ||
-    texts.length > 0 ||
-    (captionText?.length ?? 0) > 0;
-
-  if (!hasAny && blocked.value && !success.value) {
-    return {
-      ...empty,
-      status: "listing-blocked",
-      message:
-        "Impossible de charger les fichiers sources. Verifiez les politiques Storage ou les chemins des assets.",
-      probedPrefixes: prefixes,
-    };
-  }
-
-  return {
-    status: hasAny ? "ok" : "no-source",
-    imageUrls,
-    pdfUrl,
-    pdfPath: preferredPdf?.fullPath ?? null,
-    pdfName: preferredPdf?.name ?? null,
-    captionText,
-    captionError: captionText ? null : captionError,
-    textFiles,
-    probedPrefixes: prefixes,
-    hasAny,
-  };
 }

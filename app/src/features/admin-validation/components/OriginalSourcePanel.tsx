@@ -46,21 +46,31 @@ export function OriginalSourcePanel({
   countries,
   photoUrls,
 }: OriginalSourcePanelProps) {
+  // Stable, primitive-only cache key. photo_urls is the source of truth for
+  // anchors; agency/title/countries only affect agency labelling, not the
+  // source resolution, so they are deliberately NOT part of the key.
   const photoKey = (photoUrls ?? []).join("|");
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["offer-source", offerId, agencyId, agencyName, title, photoKey],
-    queryFn: () =>
-      resolveOfferSource({
-        offerId,
-        agencyId,
-        agencyName,
-        title,
-        countries,
-        photoUrls,
-      }),
-    // Signed URLs we issue are only valid for 5 minutes — don't keep stale ones.
+    queryKey: ["offer-source", offerId, photoKey],
+    queryFn: ({ signal }) =>
+      resolveOfferSource(
+        {
+          offerId,
+          agencyId,
+          agencyName,
+          title,
+          countries,
+          photoUrls,
+        },
+        { signal },
+      ),
+    // Public Storage URLs are stable; cache aggressively to avoid re-probing
+    // when the user navigates back to the same offer.
     staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: false,
   });
 
   return (
