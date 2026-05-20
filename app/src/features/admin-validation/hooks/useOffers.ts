@@ -42,8 +42,12 @@ export function useOffersToValidate() {
            lead_price, photo_urls, status, needs_review, created_at,
            agencies:agency_id ( id, name )`,
         )
-        .eq("needs_review", true)
-        .in("status", ["draft", "pending_review"])
+        // Show offers that still need review (drafts / in-progress) AND keep
+        // recently validated offers (`status = published`) visible so admins
+        // have a quick history of processed offers right in the queue.
+        .or(
+          "and(needs_review.eq.true,status.in.(draft,pending_review)),status.eq.published",
+        )
         .order("created_at", { ascending: false });
 
       if (error) throw error;
