@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { getSupabase } from "@/lib/supabase";
 import type { TourDetail } from "@/lib/types";
+import { normalizeDepartureTimes } from "@/lib/normalize-departures";
 
 // Persists corrections by updating the parent `tours` row, then replacing the
 // nested rows (tour_steps + hotel_options for each step, departures). This
@@ -76,8 +77,13 @@ async function persistOffer(offer: TourDetail): Promise<void> {
   if (delDepErr) throw delDepErr;
 
   if (offer.departures.length > 0) {
+    // Enforce the business rule deterministically: arrival = departure + 1h.
+    // The form already normalizes this on edit, but we re-apply it here as a
+    // server-write guard in case a payload sneaks past the UI (e.g. JSON tab,
+    // future API caller).
+    const normalizedDepartures = normalizeDepartureTimes(offer.departures);
     const { error: depErr } = await supabase.from("departures").insert(
-      offer.departures.map((d) => ({
+      normalizedDepartures.map((d) => ({
         tour_id: offer.id,
         departure_city: d.departure_city,
         stock: d.stock ?? 0,

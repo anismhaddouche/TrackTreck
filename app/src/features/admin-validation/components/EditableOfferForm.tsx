@@ -42,6 +42,7 @@ import type {
   TourDetail,
   TourStep,
 } from "@/lib/types";
+import { addOneHourToIsoLocal } from "@/lib/normalize-departures";
 
 interface EditableOfferFormProps {
   offer: TourDetail;
@@ -975,34 +976,6 @@ function HotelEditor({
       </div>
     </div>
   );
-}
-
-// Adds exactly one hour to a `YYYY-MM-DDTHH:mm[:ss]` local ISO string and
-// returns the same shape. Handles day/month/year rollover via the Date object.
-// Returns "" for empty/malformed inputs — callers should treat that as "leave
-// the field unchanged" or "clear the arrival field".
-function addOneHourToIsoLocal(value: string | null | undefined): string {
-  if (!value) return "";
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
-    value.trim(),
-  );
-  if (!m) return "";
-  const [, y, mo, d, h, mi, s] = m;
-  const date = new Date(
-    Number(y),
-    Number(mo) - 1,
-    Number(d),
-    Number(h),
-    Number(mi),
-    s ? Number(s) : 0,
-  );
-  if (Number.isNaN(date.getTime())) return "";
-  date.setHours(date.getHours() + 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  return s ? `${base}:${pad(date.getSeconds())}` : base;
 }
 
 function DepartureEditor({
