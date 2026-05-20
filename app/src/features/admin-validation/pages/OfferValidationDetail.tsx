@@ -293,27 +293,26 @@ export function OfferValidationDetail() {
         />
 
         <Card className="flex h-full flex-col overflow-hidden border-border/70">
-          <div className="space-y-1 border-b bg-muted/30 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Données extraites
-            </h2>
-            <p className="text-sm text-muted-foreground/80">
-              Modifiez les champs directement ou ajustez le JSON. Les deux vues
-              restent synchronisées.
-            </p>
-          </div>
-          <CardContent className="flex-1 p-4">
+          <CardContent className="flex-1 p-2">
             <Tabs defaultValue="form" className="flex h-full flex-col">
-              <TabsList className="self-start">
-                <TabsTrigger value="form">Formulaire</TabsTrigger>
-                <TabsTrigger value="json">JSON</TabsTrigger>
-              </TabsList>
-              <TabsContent value="form" className="mt-4 flex-1">
-                <div className="max-h-[65vh] overflow-y-auto pr-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <TabsList>
+                  <TabsTrigger value="form">Formulaire</TabsTrigger>
+                  <TabsTrigger value="json">JSON</TabsTrigger>
+                </TabsList>
+                <span
+                  className="hidden text-[11px] uppercase tracking-wider text-muted-foreground sm:inline"
+                  title="Modifiez les champs directement ou ajustez le JSON. Les deux vues restent synchronisées."
+                >
+                  Données extraites
+                </span>
+              </div>
+              <TabsContent value="form" className="flex-1">
+                <div className="h-[calc(100vh-11rem)] min-h-[65vh] overflow-y-auto pr-2">
                   <EditableOfferForm offer={offer} onChange={setDraft} />
                 </div>
               </TabsContent>
-              <TabsContent value="json" className="mt-4 flex-1">
+              <TabsContent value="json" className="flex-1">
                 <ExtractedJsonPanel offer={offer} onChange={setDraft} />
               </TabsContent>
             </Tabs>

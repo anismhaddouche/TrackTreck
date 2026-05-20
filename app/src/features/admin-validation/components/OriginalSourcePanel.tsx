@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 
 import { resolveOfferSource } from "@/lib/source-resolver";
 import type { ResolvedSource } from "@/lib/source-resolver";
@@ -69,7 +68,7 @@ export function OriginalSourcePanel({
 
   return (
     <Card className="flex h-full flex-col overflow-hidden">
-      <CardContent className="flex flex-1 flex-col overflow-hidden p-3">
+      <CardContent className="flex flex-1 flex-col overflow-hidden p-2">
         {isLoading ? (
           <LoadingState />
         ) : isError || !data ? (
@@ -122,35 +121,75 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
 
   return (
     <Tabs defaultValue={initial} className="flex flex-1 flex-col">
-      <TabsList className="self-start">
-        {hasText ? (
-          <TabsTrigger value="text" className="gap-1.5">
-            <FileText className="h-3.5 w-3.5" />
-            Texte
-          </TabsTrigger>
-        ) : null}
-        {hasImages ? (
-          <TabsTrigger value="image" className="gap-1.5">
-            <ImageIcon className="h-3.5 w-3.5" />
-            Image
-            <Badge variant="soft" className="ml-1 h-5 px-1.5 text-[10px]">
-              {data.imageUrls.length}
-            </Badge>
-          </TabsTrigger>
-        ) : null}
-        {hasPdf ? (
-          <TabsTrigger value="pdf" className="gap-1.5">
-            <FileText className="h-3.5 w-3.5" />
-            PDF
-          </TabsTrigger>
-        ) : null}
-      </TabsList>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <TabsList>
+          {hasText ? (
+            <TabsTrigger value="text" className="gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Texte
+            </TabsTrigger>
+          ) : null}
+          {hasImages ? (
+            <TabsTrigger value="image" className="gap-1.5">
+              <ImageIcon className="h-3.5 w-3.5" />
+              Image
+              <Badge variant="soft" className="ml-1 h-5 px-1.5 text-[10px]">
+                {data.imageUrls.length}
+              </Badge>
+            </TabsTrigger>
+          ) : null}
+          {hasPdf ? (
+            <TabsTrigger value="pdf" className="gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              PDF
+            </TabsTrigger>
+          ) : null}
+        </TabsList>
 
-      <Separator className="my-3" />
+        {hasPdf && data.pdfUrl ? (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            {data.pdfName ? (
+              <span
+                className="hidden max-w-[12rem] truncate text-[11px] sm:inline"
+                title={data.pdfName}
+              >
+                {data.pdfName}
+              </span>
+            ) : null}
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="Ouvrir le PDF"
+            >
+              <a href={data.pdfUrl} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="Télécharger le PDF"
+            >
+              <a
+                href={data.pdfUrl}
+                download={data.pdfName ?? "source.pdf"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       <TabsContent value="text" className="flex-1 overflow-hidden">
         {data.captionText ? (
-          <ScrollArea className="h-[calc(100vh-16rem)] min-h-[60vh] rounded-md border bg-muted/30">
+          <ScrollArea className="h-[calc(100vh-11rem)] min-h-[65vh] rounded-md border bg-muted/30">
             <pre className="whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground/90">
               {data.captionText}
             </pre>
@@ -172,7 +211,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
 
       <TabsContent value="image" className="flex-1 overflow-hidden">
         {data.imageUrls.length > 0 ? (
-          <ScrollArea className="h-[calc(100vh-16rem)] min-h-[60vh] rounded-md border bg-muted/30">
+          <ScrollArea className="h-[calc(100vh-11rem)] min-h-[65vh] rounded-md border bg-muted/30">
             <div className="flex flex-col gap-3 p-3">
               {data.imageUrls.map((url, idx) => (
                 <ImagePreview key={url} url={url} index={idx + 1} />
@@ -190,37 +229,11 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
 
       <TabsContent value="pdf" className="flex-1 overflow-hidden">
         {data.pdfUrl ? (
-          <div className="flex flex-1 flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button asChild variant="outline" size="sm">
-                <a href={data.pdfUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Ouvrir le PDF
-                </a>
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={data.pdfUrl}
-                  download={data.pdfName ?? "source.pdf"}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Télécharger le PDF
-                </a>
-              </Button>
-              {data.pdfName ? (
-                <span className="text-xs text-muted-foreground">
-                  {data.pdfName}
-                </span>
-              ) : null}
-            </div>
-            <iframe
-              src={data.pdfUrl}
-              title="PDF source original"
-              className="h-[calc(100vh-18rem)] min-h-[55vh] w-full rounded-md border bg-background"
-            />
-          </div>
+          <iframe
+            src={`${data.pdfUrl}#toolbar=1&navpanes=0&view=FitH`}
+            title="PDF source original"
+            className="h-[calc(100vh-11rem)] min-h-[70vh] w-full rounded-md border bg-background"
+          />
         ) : (
           <EmptyState
             icon={FileText}
