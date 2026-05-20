@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function AdminLayout() {
   return (
@@ -17,9 +18,12 @@ export function AdminLayout() {
             </Badge>
           </div>
 
-          <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Session sécurisée · clé anonyme</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Session sécurisée · clé anonyme</span>
+            </div>
+            <ThemeToggle />
           </div>
         </div>
       </header>
