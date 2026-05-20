@@ -263,7 +263,7 @@ export function ManualOfferUpload() {
           </div>
 
           {!hasWebhook ? (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
               <strong>Endpoint du pipeline non configuré.</strong>{" "}
               {webhookIssue ?? null} Définissez{" "}
               <code>VITE_N8N_INGESTION_WEBHOOK_URL</code> dans{" "}

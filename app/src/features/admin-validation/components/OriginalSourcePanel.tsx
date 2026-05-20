@@ -300,7 +300,7 @@ function EmptyState({
 }) {
   const toneClass =
     tone === "warning"
-      ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+      ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
       : tone === "error"
         ? "border-destructive/50 bg-destructive/10 text-destructive"
         : "border-dashed border-border bg-muted/30 text-foreground";
