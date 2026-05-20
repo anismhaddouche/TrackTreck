@@ -239,6 +239,11 @@ export function OfferValidationDetail() {
               <Download className="h-4 w-4" />
               Télécharger le JSON
             </Button>
+          </div>
+
+          <Separator orientation="vertical" className="hidden h-6 sm:block" />
+
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               onClick={handleSave}
@@ -251,11 +256,6 @@ export function OfferValidationDetail() {
               )}
               Enregistrer les corrections
             </Button>
-          </div>
-
-          <Separator orientation="vertical" className="hidden h-6 sm:block" />
-
-          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="destructive"
               size="sm"

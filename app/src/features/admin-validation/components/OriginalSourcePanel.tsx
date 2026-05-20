@@ -12,13 +12,7 @@ import {
   Lock,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,26 +69,7 @@ export function OriginalSourcePanel({
 
   return (
     <Card className="flex h-full flex-col overflow-hidden">
-      <CardHeader className="space-y-1 border-b bg-muted/40 pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">
-            Source originale
-          </CardTitle>
-          {data?.status === "ok" ? (
-            <Badge variant="success">Chargée</Badge>
-          ) : data?.status === "listing-blocked" ? (
-            <Badge variant="warning" className="gap-1">
-              <Lock className="h-3 w-3" />
-              Restreint
-            </Badge>
-          ) : null}
-        </div>
-        <CardDescription>
-          Contenu brut reçu via le pipeline WhatsApp.
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-1 flex-col overflow-hidden p-4">
+      <CardContent className="flex flex-1 flex-col overflow-hidden p-3">
         {isLoading ? (
           <LoadingState />
         ) : isError || !data ? (
@@ -175,7 +150,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
 
       <TabsContent value="text" className="flex-1 overflow-hidden">
         {data.captionText ? (
-          <ScrollArea className="h-[58vh] rounded-md border bg-muted/30">
+          <ScrollArea className="h-[calc(100vh-16rem)] min-h-[60vh] rounded-md border bg-muted/30">
             <pre className="whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground/90">
               {data.captionText}
             </pre>
@@ -197,7 +172,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
 
       <TabsContent value="image" className="flex-1 overflow-hidden">
         {data.imageUrls.length > 0 ? (
-          <ScrollArea className="h-[58vh] rounded-md border bg-muted/30">
+          <ScrollArea className="h-[calc(100vh-16rem)] min-h-[60vh] rounded-md border bg-muted/30">
             <div className="flex flex-col gap-3 p-3">
               {data.imageUrls.map((url, idx) => (
                 <ImagePreview key={url} url={url} index={idx + 1} />
@@ -243,7 +218,7 @@ function SourceTabs({ data }: { data: ResolvedSource }) {
             <iframe
               src={data.pdfUrl}
               title="PDF source original"
-              className="h-[55vh] w-full rounded-md border bg-background"
+              className="h-[calc(100vh-18rem)] min-h-[55vh] w-full rounded-md border bg-background"
             />
           </div>
         ) : (
