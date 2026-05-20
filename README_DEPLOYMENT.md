@@ -4,14 +4,26 @@
 wired together by Docker Compose. **Supabase is self-hosted on the same VPS**
 — no external Supabase Cloud dependency.
 
-**Public access is HTTP-only and path-based on the VPS IP** — no DNS, no TLS:
+**Public access is HTTP-only and path-based on the VPS IP** — no DNS, no
+sslip.io, no Let's Encrypt, no TLS. Browsers WILL show "Not secure"; this is
+expected for now.
 
-| Public URL                                  | Service                          |
-| ------------------------------------------- | -------------------------------- |
-| `http://157.90.166.243/admin`               | Admin SPA                        |
-| `http://157.90.166.243/n8n`                 | n8n editor (Basic Auth)          |
-| `http://157.90.166.243/api`                 | Evolution API / manager          |
-| `http://157.90.166.243/supabase`            | Supabase Kong gateway + Studio   |
+| Public URL                                                   | Service                          |
+| ------------------------------------------------------------ | -------------------------------- |
+| `http://157.90.166.243/admin`                                | Admin SPA                        |
+| `http://157.90.166.243/n8n`                                  | n8n editor (Basic Auth)          |
+| `http://157.90.166.243/api`                                  | Evolution API (REST)             |
+| `http://157.90.166.243/manager/login`                        | Evolution Manager (UI)           |
+| `http://157.90.166.243/supabase`                             | Supabase Kong gateway            |
+| `http://157.90.166.243/supabase/rest/v1/...`                 | PostgREST (used by app + n8n)    |
+| `http://157.90.166.243/project/default`                      | Supabase Studio                  |
+| `http://157.90.166.243/storage/v1/object/public/...`         | Supabase Storage (absolute)      |
+
+> ⚠️ **Evolution Manager Server URL.** When you open
+> `http://157.90.166.243/manager/login`, the "Server URL" field in the login
+> form must be set to `http://157.90.166.243/api` (the Evolution **REST** base,
+> not the Manager URL). Get this wrong and the Manager will silently fail to
+> list instances.
 
 ```
                 Internet (TCP 80)
@@ -40,16 +52,25 @@ Only port **80** is exposed publicly (443 is reserved for a later TLS
 migration). Every database, cache and internal Supabase service stays on the
 private `tracktreck` Docker network.
 
-> ⚠️ **Supabase Studio under path-based routing is fragile.** Studio is a
-> Next.js app that hard-codes absolute paths (`/_next/...`, `/api/...`,
-> `/project/default`) at the document root. When served under `/supabase`,
-> initial HTML loads, but several internal links, asset paths and API calls
-> originating from Studio's own client code will resolve to the wrong path
-> (e.g. `/_next/static/...` instead of `/supabase/_next/static/...`). The
-> REST / Auth / Storage APIs themselves work fine through `/supabase/rest/v1/`,
-> `/supabase/auth/v1/`, `/supabase/storage/v1/` because Kong handles those
-> routes explicitly. **For a smoother Studio experience, run it on a
-> subdomain.** This path-based layout is provided as a no-DNS workaround.
+> ⚠️ **Supabase Studio uses absolute paths.** Studio is a Next.js app that
+> hard-codes absolute URLs (`/_next/...`, `/api/profile`, `/project/default`,
+> `/storage/v1/...`) at the document root. The `Caddyfile` therefore proxies
+> those bare paths to `supabase-kong` IN ADDITION to the `/supabase/...`
+> prefix routes. Specifically:
+>
+> - `/project/*`, `/_next/*`, `/img/*`, `/images/*` → Studio
+> - `/api/profile*`, `/api/projects*`, `/api/organizations*`, `/api/platform*`,
+>   `/api/branches*`, `/api/database*`, `/api/storage*`, `/api/auth*`,
+>   `/api/edge-functions*`, `/api/integrations*` → Studio internal API
+> - `/storage/v1/*`, `/auth/v1/*`, `/rest/v1/*`, `/realtime/v1/*` → Kong APIs
+>
+> The Studio-internal `@supabase_studio_api` matcher MUST be evaluated **before**
+> the generic `/api/*` Evolution route in `Caddyfile`, otherwise Studio's own
+> fetches land on the Evolution API and the dashboard breaks.
+>
+> Supabase REST for the app and n8n should still use the prefixed form
+> `http://<host>/supabase/rest/v1/...`. The bare `/rest/v1/*` route is there as
+> a convenience for clients that hard-code absolute paths.
 
 ---
 
@@ -221,7 +242,8 @@ prototype** — before real end-users, replace `anon_admin_access` with
 role-aware policies and split read vs write per role. `schema_migrations`
 is intentionally left untouched (internal).
 
-Tail Caddy to confirm it picked up the four path routes:
+Tail Caddy to confirm it picked up every path route (admin, n8n, api,
+manager, supabase, plus the absolute Studio / Storage routes):
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f caddy
@@ -230,9 +252,11 @@ docker compose -f docker-compose.prod.yml logs -f caddy
 Then visit (substitute your VPS IP for `157.90.166.243`):
 - `http://157.90.166.243/admin` — admin UI
 - `http://157.90.166.243/n8n` — n8n (Basic Auth)
-- `http://157.90.166.243/api/manager` — Evolution manager
-- `http://157.90.166.243/supabase` — Supabase Studio (Basic Auth via Kong) — see the warning at the top of this doc about Studio's quirks under path-based routing
-- `http://157.90.166.243/supabase/rest/v1/`, `/supabase/auth/v1/`, `/supabase/storage/v1/` — APIs
+- `http://157.90.166.243/api/` — Evolution API JSON (version 2.3.7)
+- `http://157.90.166.243/manager/login` — Evolution Manager UI (set "Server URL" to `http://157.90.166.243/api`)
+- `http://157.90.166.243/supabase` — Supabase Kong (Studio Basic Auth) — Studio dashboard itself loads at `http://157.90.166.243/project/default`
+- `http://157.90.166.243/supabase/rest/v1/...` — PostgREST for the app + n8n
+- `http://157.90.166.243/storage/v1/object/public/<bucket>/<path>` — direct file URL
 
 The default `travel-offer-assets` storage bucket is created idempotently by
 `scripts/bootstrap-supabase-db.sh` (run it once after the first `up`).
@@ -469,35 +493,56 @@ docker compose -f docker-compose.prod.yml logs caddy | grep -iE "error|serving" 
 BASE=http://157.90.166.243
 
 # Admin SPA (Vite, base=/admin/)
-curl -I $BASE/admin/                # 200 OK, content-type text/html
-curl -I $BASE/admin/assets/         # 403 / 404 is fine; just confirms route lives
+curl -I $BASE/admin/                                                    # 200
 
-# n8n (Basic Auth — 401 expected without creds)
-curl -I $BASE/n8n/                  # 401 (Basic Auth) — proves n8n received /n8n/
+# n8n route (200 expected — Basic Auth prompt is the editor itself)
+curl -s -o /dev/null -w "%{http_code}\n" $BASE/n8n/                     # 200
 
-# Evolution API root (welcome JSON / 200)
-curl -sS $BASE/api/                 # JSON welcome payload
+# n8n assets MUST be JS, not HTML. If this prints text/html the handle_path
+# rewrite for /n8n is broken — DO NOT swap `handle_path` for `handle`.
+# Pick any real fingerprinted asset from the n8n editor HTML and curl it:
+curl -s -D- -o /dev/null $BASE/n8n/assets/index-mpfVSCc6.js | grep -i "content-type"
+# Expected: content-type: text/javascript (or application/javascript)
 
-# Supabase Kong gateway (Studio Basic Auth — 401 expected without creds)
-curl -I $BASE/supabase/             # 401 Basic Auth via Kong
+# Evolution API root — JSON with version 2.3.7
+curl -s $BASE/api/
+
+# Evolution: list instances (needs the master apikey)
+EVOLUTION_KEY=$(grep '^EVOLUTION_API_KEY=' .env | cut -d '=' -f2-)
+curl -sS -H "apikey: $EVOLUTION_KEY" $BASE/api/instance/fetchInstances
+
+# Evolution Manager UI loads at /manager/login
+curl -I $BASE/manager/login                                             # 200
+
+# Supabase Kong (Studio Basic Auth — 401 expected without creds)
+curl -I $BASE/supabase/
 curl -I -u "$STUDIO_USERNAME:$STUDIO_PASSWORD" $BASE/supabase/
 # Expected with creds:
 #   HTTP/1.1 307
-#   location: /project/default     (note: Studio emits an absolute redirect
-#                                   that does NOT include /supabase — this is
-#                                   the path-based-routing fragility called
-#                                   out at the top of this doc.)
+#   location: /project/default
+# (Studio emits an absolute redirect — Caddy handles /project/* explicitly.)
 
-# Supabase REST is wired
-curl -sS "$BASE/supabase/rest/v1/" -H "apikey: $SUPABASE_ANON_KEY" | head
+# Supabase Studio dashboard
+curl -I -u "$STUDIO_USERNAME:$STUDIO_PASSWORD" $BASE/project/default
+
+# Supabase REST via the /supabase prefix (this is what the app + n8n use)
+ANON_KEY=$(grep '^SUPABASE_ANON_KEY=' .env | cut -d '=' -f2-)
+curl -sS \
+  -H "apikey: $ANON_KEY" \
+  -H "Authorization: Bearer $ANON_KEY" \
+  "$BASE/supabase/rest/v1/tours?select=id,title,status,needs_review&limit=3"
 
 # Supabase Auth health
-curl -sS "$BASE/supabase/auth/v1/health" -H "apikey: $SUPABASE_ANON_KEY"
+curl -sS "$BASE/supabase/auth/v1/health" -H "apikey: $ANON_KEY"
 
 # Storage list (bucket must exist)
 curl -sS "$BASE/supabase/storage/v1/bucket" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"
+
+# Supabase Storage ABSOLUTE route (used by Studio previews + public file URLs)
+curl -I "$BASE/storage/v1/object/public/travel-offer-assets/egypte/lover-travel/01/01.jpg"
+# Expected: HTTP/1.1 200, content-type: image/jpeg
 
 # Frontend bundle does NOT leak the service-role key
 docker compose -f docker-compose.prod.yml exec app sh -c \
@@ -517,10 +562,16 @@ Expected:
 
 - [ ] every service `Up (healthy)` where healthchecks are defined
 - [ ] only `:80` listening on the public interface
-- [ ] Caddy logs show all four routes registered (no parse errors)
-- [ ] all four public paths return HTTP 200 / 401 (not 502)
-- [ ] REST returns Swagger JSON, Auth returns `{"description":"GoTrue...","name":"GoTrue"...}`
-- [ ] Storage `bucket` call returns an array with `travel-offer-assets`
+- [ ] Caddy logs show all routes registered (no parse errors)
+- [ ] `/admin/` returns 200
+- [ ] `/n8n/` returns 200 and `/n8n/assets/*.js` returns `text/javascript` (NOT `text/html`)
+- [ ] `/api/` returns Evolution JSON with version `2.3.7`
+- [ ] `/manager/login` returns 200
+- [ ] Evolution `fetchInstances` returns a JSON array (or `[]`)
+- [ ] `/supabase/rest/v1/tours` returns a JSON array
+- [ ] Auth returns `{"description":"GoTrue...","name":"GoTrue"...}`
+- [ ] Storage `bucket` call returns an array containing `travel-offer-assets`
+- [ ] `/storage/v1/object/public/...` returns 200 + `image/jpeg`
 - [ ] `OK_NO_SERVICE_ROLE` and `OK_NO_LOCALHOST` print
 - [ ] `docker stats` total memory < 3 GB at idle (CX23) / < 5 GB (CX33)
 - [ ] `df -h /` shows > 10 GB free
@@ -668,8 +719,9 @@ Expected services:
 End-to-end smoke checks:
 
 - [ ] Admin app loads offers (`http://157.90.166.243/admin` → list renders, no console errors)
-- [ ] Supabase Studio opens (`http://157.90.166.243/supabase` → Basic Auth, then dashboard) — see Studio fragility warning at the top
+- [ ] `http://157.90.166.243/n8n` shows the n8n login page (after Basic Auth) and the editor renders fully (assets resolve as JS, not HTML)
+- [ ] `curl http://157.90.166.243/api/` returns Evolution welcome JSON (version `2.3.7`)
+- [ ] Evolution Manager opens at `http://157.90.166.243/manager/login` and accepts `Server URL = http://157.90.166.243/api`
+- [ ] Supabase Studio opens at `http://157.90.166.243/project/default` (Basic Auth via Kong)
 - [ ] Studio Table Editor shows `public` tables
-- [ ] Studio Storage shows `travel-offer-assets` bucket
-- [ ] `curl http://157.90.166.243/api/` returns Evolution welcome JSON
-- [ ] `http://157.90.166.243/n8n` shows the n8n login page (after Basic Auth)
+- [ ] Studio Storage shows `travel-offer-assets` bucket and previews / downloads of objects succeed (uses `/storage/v1/...` absolute route)
