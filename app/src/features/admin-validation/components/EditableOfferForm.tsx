@@ -977,6 +977,34 @@ function HotelEditor({
   );
 }
 
+// Adds exactly one hour to a `YYYY-MM-DDTHH:mm[:ss]` local ISO string and
+// returns the same shape. Handles day/month/year rollover via the Date object.
+// Returns "" for empty/malformed inputs — callers should treat that as "leave
+// the field unchanged" or "clear the arrival field".
+function addOneHourToIsoLocal(value: string | null | undefined): string {
+  if (!value) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+    value.trim(),
+  );
+  if (!m) return "";
+  const [, y, mo, d, h, mi, s] = m;
+  const date = new Date(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    Number(h),
+    Number(mi),
+    s ? Number(s) : 0,
+  );
+  if (Number.isNaN(date.getTime())) return "";
+  date.setHours(date.getHours() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return s ? `${base}:${pad(date.getSeconds())}` : base;
+}
+
 function DepartureEditor({
   departure,
   onChange,
@@ -986,6 +1014,33 @@ function DepartureEditor({
   onChange: (next: Departure) => void;
   onRemove: () => void;
 }) {
+  // Normalize once on mount: if the arrival is empty or duplicates the
+  // departure (the two known inconsistencies coming out of the pipeline),
+  // recompute it to departure + 1h. Manual non-empty distinct values are
+  // preserved — the user can still override temporarily.
+  const normalizedRef = useRef(false);
+  useEffect(() => {
+    if (normalizedRef.current) return;
+    normalizedRef.current = true;
+    const patch: Partial<Departure> = {};
+    const fwdDep = departure.flight_departure_time;
+    const fwdArr = departure.flight_arrival_time;
+    if (fwdDep && (!fwdArr || fwdArr === fwdDep)) {
+      const fixed = addOneHourToIsoLocal(fwdDep);
+      if (fixed) patch.flight_arrival_time = fixed;
+    }
+    const retDep = departure.return_flight_departure_time;
+    const retArr = departure.return_flight_arrival_time;
+    if (retDep && (!retArr || retArr === retDep)) {
+      const fixed = addOneHourToIsoLocal(retDep);
+      if (fixed) patch.return_flight_arrival_time = fixed;
+    }
+    if (Object.keys(patch).length > 0) {
+      onChange({ ...departure, ...patch });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="rounded-md border bg-muted/20 p-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1002,9 +1057,15 @@ function DepartureEditor({
         <FieldText
           label="Aller — départ (ISO)"
           value={departure.flight_departure_time ?? ""}
-          onChange={(v) =>
-            onChange({ ...departure, flight_departure_time: v || null })
-          }
+          onChange={(v) => {
+            const trimmed = v || null;
+            const arrival = trimmed ? addOneHourToIsoLocal(trimmed) : "";
+            onChange({
+              ...departure,
+              flight_departure_time: trimmed,
+              flight_arrival_time: arrival || null,
+            });
+          }}
         />
         <FieldText
           label="Aller — arrivée (ISO)"
@@ -1016,9 +1077,15 @@ function DepartureEditor({
         <FieldText
           label="Retour — départ (ISO)"
           value={departure.return_flight_departure_time ?? ""}
-          onChange={(v) =>
-            onChange({ ...departure, return_flight_departure_time: v || null })
-          }
+          onChange={(v) => {
+            const trimmed = v || null;
+            const arrival = trimmed ? addOneHourToIsoLocal(trimmed) : "";
+            onChange({
+              ...departure,
+              return_flight_departure_time: trimmed,
+              return_flight_arrival_time: arrival || null,
+            });
+          }}
         />
         <FieldText
           label="Retour — arrivée (ISO)"
