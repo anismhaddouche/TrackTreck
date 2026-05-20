@@ -263,12 +263,38 @@ interface ResolvedCaption {
   failedPaths: string[];
 }
 
-async function resolveCaption(
+async function resolveCaptionWithExplicit(
+  explicitPath: string | null,
   prefixes: string[],
   signal: AbortSignal | undefined,
 ): Promise<ResolvedCaption> {
   const failedPaths: string[] = [];
 
+  // 1) Explicit caption anchor from photo_urls — fetch directly, no prefix probing.
+  if (explicitPath) {
+    if (signal?.aborted) return { text: null, asset: null, failedPaths };
+    const url = getPublicUrl(explicitPath);
+    if (url) {
+      const text = await fetchCaption(url, signal);
+      if (text !== null) {
+        return {
+          text,
+          asset: {
+            url,
+            path: explicitPath,
+            name: basename(explicitPath),
+            kind: "text",
+          },
+          failedPaths,
+        };
+      }
+      failedPaths.push(explicitPath);
+    }
+    return { text: null, asset: null, failedPaths };
+  }
+
+  // 2) Image-sibling fallback — only fired when the caller passed a non-empty
+  // prefix list (i.e. at least one image anchor exists).
   for (const prefix of prefixes) {
     for (const name of CAPTION_CANDIDATES) {
       if (signal?.aborted) return { text: null, asset: null, failedPaths };
@@ -331,11 +357,31 @@ export async function resolveOfferSource(
     anchors.map((a) => a.parentPrefix).filter((p): p is string => Boolean(p)),
   ).slice(0, MAX_PREFIXES);
 
+  // Caption.txt is only fetched when the data model gives us a reason to:
+  //   - an anchor IS already caption.txt (explicit in photo_urls), or
+  //   - at least one anchor is an image (the n8n image workflow co-writes
+  //     caption.txt next to the photos).
+  // PDF-only sources have their text embedded in the PDF — probing caption.txt
+  // there yields a guaranteed 400 from Storage and adds nothing.
+  const explicitCaptionAnchor =
+    anchors.find((a) => /(?:^|\/)caption\.txt$/i.test(a.objectPath)) ?? null;
+  const hasImageAnchor = anchors.some((a) => IMAGE_EXT.test(a.objectPath));
+  const captionPrefixes = explicitCaptionAnchor
+    ? [] // We'll load the explicit anchor directly below — no prefix probing.
+    : hasImageAnchor
+      ? prefixes
+      : [];
+
   console.info("[source-resolver] resolving source", {
     offerId: input.offerId,
     bucket: STORAGE_BUCKET,
     candidateCount: prefixes.length,
     candidates: prefixes,
+    captionMode: explicitCaptionAnchor
+      ? "explicit"
+      : hasImageAnchor
+        ? "image-sibling"
+        : "skip",
   });
 
   // Image URLs are derived directly from the stored anchors — no network.
@@ -358,7 +404,11 @@ export async function resolveOfferSource(
     : null;
 
   try {
-    const captionResult = await resolveCaption(prefixes, signal);
+    const captionResult = await resolveCaptionWithExplicit(
+      explicitCaptionAnchor?.objectPath ?? null,
+      captionPrefixes,
+      signal,
+    );
 
     if (signal?.aborted) return empty;
 
