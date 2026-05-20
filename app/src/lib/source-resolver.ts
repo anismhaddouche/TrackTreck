@@ -70,15 +70,18 @@ const PDF_EXT = /\.pdf$/i;
 const MAX_PREFIXES = 5;
 
 // Well-known sibling filenames written by the n8n workflow.
+//
+// PDFs are intentionally NOT probed by guessing filenames. The data model only
+// guarantees an explicit PDF when one of the `photo_urls` entries ends in .pdf.
+// Speculative HEAD probes against missing /storage/v1/object/public/... paths
+// return 400 from Kong/Storage and showed up as noise in DevTools — we now
+// rely exclusively on the explicit path.
 const CAPTION_CANDIDATES = ["caption.txt"];
-const PDF_CANDIDATES = ["01.pdf", "source.pdf", "offer.pdf", "document.pdf"];
 
 // -----------------------------------------------------------------------------
 // Module-level cache. Survives across offer changes within the same SPA load,
 // so navigating offer-A → offer-B → offer-A does not re-probe anything.
 // -----------------------------------------------------------------------------
-type ProbeResult = "ok" | "missing";
-const headCache = new Map<string, Promise<ProbeResult>>();
 const captionCache = new Map<string, Promise<string | null>>();
 
 // -----------------------------------------------------------------------------
@@ -214,29 +217,6 @@ function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
-// One HEAD per unique URL, ever. Cache the verdict.
-async function probeHead(url: string, signal?: AbortSignal): Promise<ProbeResult> {
-  const cached = headCache.get(url);
-  if (cached) return cached;
-
-  const promise = (async (): Promise<ProbeResult> => {
-    try {
-      const res = await fetch(url, { method: "HEAD", signal });
-      return res.ok ? "ok" : "missing";
-    } catch (err) {
-      if (isAbortError(err)) {
-        // Don't poison the cache on abort — let a future call retry.
-        headCache.delete(url);
-        throw err;
-      }
-      return "missing";
-    }
-  })();
-
-  headCache.set(url, promise);
-  return promise;
-}
-
 // One GET per unique caption URL, ever. Returns the text body or null.
 async function fetchCaption(url: string, signal?: AbortSignal): Promise<string | null> {
   const cached = captionCache.get(url);
@@ -310,37 +290,6 @@ async function resolveCaption(
   return { text: null, asset: null, failedPaths };
 }
 
-interface ResolvedPdf {
-  asset: ResolvedAsset | null;
-  failedPaths: string[];
-}
-
-async function resolvePdf(
-  prefixes: string[],
-  signal: AbortSignal | undefined,
-): Promise<ResolvedPdf> {
-  const failedPaths: string[] = [];
-
-  for (const prefix of prefixes) {
-    for (const name of PDF_CANDIDATES) {
-      if (signal?.aborted) return { asset: null, failedPaths };
-      const path = `${prefix}/${name}`;
-      const url = getPublicUrl(path);
-      if (!url) continue;
-
-      const verdict = await probeHead(url, signal);
-      if (verdict === "ok") {
-        return {
-          asset: { url, path, name, kind: "pdf" },
-          failedPaths,
-        };
-      }
-      failedPaths.push(path);
-    }
-  }
-  return { asset: null, failedPaths };
-}
-
 // -----------------------------------------------------------------------------
 // Entry point.
 // -----------------------------------------------------------------------------
@@ -395,26 +344,21 @@ export async function resolveOfferSource(
     .map((a) => getPublicUrl(a.objectPath))
     .filter((u): u is string => Boolean(u));
 
-  // If photo_urls already contained the PDF (rare but possible), pick it up
-  // without a HEAD probe.
-  const pdfAnchor =
-    anchors.find((a) => PDF_EXT.test(a.objectPath)) ?? null;
+  // PDFs are resolved EXCLUSIVELY from explicit anchors. If photo_urls (or any
+  // future explicit source-path field) carries a .pdf entry, we use it as-is.
+  // Otherwise no PDF is shown — we never probe speculative filenames.
+  const pdfAnchor = anchors.find((a) => PDF_EXT.test(a.objectPath)) ?? null;
+  const pdfAsset: ResolvedAsset | null = pdfAnchor
+    ? {
+        url: getPublicUrl(pdfAnchor.objectPath) ?? "",
+        path: pdfAnchor.objectPath,
+        name: basename(pdfAnchor.objectPath),
+        kind: "pdf",
+      }
+    : null;
 
   try {
-    const [captionResult, pdfResult] = await Promise.all([
-      resolveCaption(prefixes, signal),
-      pdfAnchor
-        ? Promise.resolve<ResolvedPdf>({
-            asset: {
-              url: getPublicUrl(pdfAnchor.objectPath) ?? "",
-              path: pdfAnchor.objectPath,
-              name: basename(pdfAnchor.objectPath),
-              kind: "pdf",
-            },
-            failedPaths: [],
-          })
-        : resolvePdf(prefixes, signal),
-    ]);
+    const captionResult = await resolveCaption(prefixes, signal);
 
     if (signal?.aborted) return empty;
 
@@ -424,18 +368,15 @@ export async function resolveOfferSource(
 
     const hasAny =
       imageUrls.length > 0 ||
-      pdfResult.asset !== null ||
+      pdfAsset !== null ||
       (captionResult.text?.length ?? 0) > 0;
 
-    const failedCount =
-      captionResult.failedPaths.length + pdfResult.failedPaths.length;
-    if (failedCount > 0) {
+    if (captionResult.failedPaths.length > 0) {
       // One clean line per offer summarising what we could not find. Each
       // individual 404/400 is silent on the network — the cache prevents repeats.
       console.info("[source-resolver] failed candidates", {
         offerId: input.offerId,
         caption: captionResult.failedPaths,
-        pdf: pdfResult.failedPaths,
       });
     }
 
@@ -443,20 +384,17 @@ export async function resolveOfferSource(
       offerId: input.offerId,
       imageCount: imageUrls.length,
       hasCaption: captionResult.text !== null,
-      hasPdf: pdfResult.asset !== null,
+      hasPdf: pdfAsset !== null,
     });
 
     return {
       status: hasAny ? "ok" : "no-source",
       imageUrls,
-      pdfUrl: pdfResult.asset?.url ?? null,
-      pdfPath: pdfResult.asset?.path ?? null,
-      pdfName: pdfResult.asset?.name ?? null,
+      pdfUrl: pdfAsset?.url ?? null,
+      pdfPath: pdfAsset?.path ?? null,
+      pdfName: pdfAsset?.name ?? null,
       captionText: captionResult.text,
-      captionError:
-        captionResult.text === null && captionResult.failedPaths.length > 0
-          ? null
-          : null,
+      captionError: null,
       textFiles,
       probedPrefixes: prefixes,
       hasAny,
