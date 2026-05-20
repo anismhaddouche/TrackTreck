@@ -236,12 +236,7 @@ export function OffersReviewList({
                     {formatPrice(offer.lead_price)}
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      <OfferStatusBadge status={offer.status} />
-                      {offer.needs_review ? (
-                        <Badge variant="warning">À vérifier</Badge>
-                      ) : null}
-                    </div>
+                    <OfferStatusBadge status={offer.status} />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
