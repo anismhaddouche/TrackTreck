@@ -55,6 +55,11 @@ export interface OfferServices {
   excluded: string[];
 }
 
+export interface Commission {
+  label: string;
+  amount: number | null;
+}
+
 export interface TourSummary {
   id: number;
   title: string | null;
@@ -88,6 +93,7 @@ export interface TourDetail {
   global_pricing: number | null;
   lead_price: number | null;
   commission_amount: number | null;
+  commissions: Commission[];
   services: OfferServices | null;
   needs_review: boolean;
   created_at: string | null;

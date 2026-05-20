@@ -36,6 +36,7 @@ import {
 } from "../hooks/useAgencies";
 import { useAirlines, type AirlineOption } from "../hooks/useAirlines";
 import type {
+  Commission,
   Departure,
   HotelOption,
   HotelPricing,
@@ -262,13 +263,6 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               onChange={(v) => update("global_pricing", v)}
               unit="DA"
             />
-            <FieldNumber
-              label="Commission"
-              value={offer.commission_amount}
-              onChange={(v) => update("commission_amount", v)}
-              placeholder="Ex : 10000"
-              unit="DA"
-            />
             <div className="flex items-end gap-2 pb-1.5">
               <input
                 id="is_global_pricing"
@@ -282,6 +276,11 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
               <Label htmlFor="is_global_pricing">Tarif global activé</Label>
             </div>
           </div>
+
+          <CommissionsEditor
+            commissions={offer.commissions ?? []}
+            onChange={(next) => update("commissions", next)}
+          />
         </CardContent>
       </Card>
 
@@ -974,6 +973,97 @@ function HotelEditor({
           Supprimer l'hôtel
         </Button>
       </div>
+    </div>
+  );
+}
+
+function CommissionsEditor({
+  commissions,
+  onChange,
+}: {
+  commissions: Commission[];
+  onChange: (next: Commission[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Commissions
+      </Label>
+      {commissions.length === 0 ? (
+        <p className="text-xs italic text-muted-foreground">
+          Aucune commission. Cliquez sur « Ajouter une commission » pour en
+          créer une.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {commissions.map((c, idx) => (
+            <div
+              key={idx}
+              className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/20 p-2 sm:flex-nowrap"
+            >
+              <div className="flex-1 min-w-[140px]">
+                <Label className="text-[11px] text-muted-foreground">
+                  Libellé
+                </Label>
+                <Input
+                  value={c.label}
+                  placeholder="Ex : Adultes"
+                  onChange={(e) => {
+                    const next = [...commissions];
+                    next[idx] = { ...next[idx], label: e.target.value };
+                    onChange(next);
+                  }}
+                />
+              </div>
+              <div className="w-36 min-w-[120px]">
+                <Label className="text-[11px] text-muted-foreground">
+                  Montant
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={c.amount ?? ""}
+                    onChange={(e) => {
+                      const next = [...commissions];
+                      next[idx] = {
+                        ...next[idx],
+                        amount: parseNumberOrNull(e.target.value),
+                      };
+                      onChange(next);
+                    }}
+                  />
+                  <span className="text-sm text-muted-foreground">DA</span>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  const next = commissions.filter((_, i) => i !== idx);
+                  onChange(next);
+                }}
+                aria-label="Supprimer cette commission"
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() =>
+          onChange([...commissions, { label: "", amount: null }])
+        }
+      >
+        <Plus className="h-4 w-4" />
+        Ajouter une commission
+      </Button>
     </div>
   );
 }

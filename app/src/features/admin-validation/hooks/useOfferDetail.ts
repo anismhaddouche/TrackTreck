@@ -6,6 +6,7 @@ import {
   isDefaultAgencyName,
 } from "@/lib/source-resolver";
 import type {
+  Commission,
   Departure,
   HotelOption,
   HotelPricing,
@@ -28,6 +29,7 @@ interface RawTour {
   global_pricing: number | null;
   lead_price: number | null;
   commission_amount: number | string | null;
+  commissions: unknown;
   services: unknown;
   needs_review: boolean;
   created_at: string | null;
@@ -83,6 +85,46 @@ function asPricing(value: unknown): HotelPricing {
   };
 }
 
+// Parses the `commissions` JSONB into a clean `Commission[]`. Rows missing a
+// `label` and an `amount` are dropped — they're noise. Falls back to building
+// a single-row array from the legacy scalar `commission_amount` when the new
+// column is empty/missing, so the admin keeps working before the migration is
+// applied AND for offers ingested before backfill.
+function asCommissions(
+  value: unknown,
+  legacyAmount: number | string | null | undefined,
+): Commission[] {
+  const fromArray = (raw: unknown): Commission[] => {
+    if (!Array.isArray(raw)) return [];
+    const out: Commission[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const label = typeof row.label === "string" ? row.label : "";
+      const amountRaw = row.amount;
+      const amount =
+        amountRaw === null || amountRaw === undefined
+          ? null
+          : Number.isFinite(Number(amountRaw))
+            ? Number(amountRaw)
+            : null;
+      if (label === "" && amount === null) continue;
+      out.push({ label, amount });
+    }
+    return out;
+  };
+  const parsed = fromArray(value);
+  if (parsed.length > 0) return parsed;
+
+  if (legacyAmount !== null && legacyAmount !== undefined) {
+    const n = Number(legacyAmount);
+    if (Number.isFinite(n)) {
+      return [{ label: "Commission", amount: n }];
+    }
+  }
+  return [];
+}
+
 function asServices(value: unknown): { included: string[]; excluded: string[] } {
   const v = (value ?? {}) as { included?: unknown; excluded?: unknown };
   const arr = (raw: unknown): string[] =>
@@ -119,7 +161,7 @@ export function useOfferDetail(idParam: string | undefined) {
         .select(
           `id, title, agency_id, countries, duration_nights, airline,
            description, itinerary, status, photo_urls, is_global_pricing,
-           global_pricing, lead_price, commission_amount, services, needs_review, created_at,
+           global_pricing, lead_price, commission_amount, commissions, services, needs_review, created_at,
            agencies:agency_id ( id, name, email, phone, town )`,
         )
         .eq("id", idNum)
@@ -226,6 +268,7 @@ export function useOfferDetail(idParam: string | undefined) {
             : Number.isFinite(Number(tour.commission_amount))
               ? Number(tour.commission_amount)
               : null,
+        commissions: asCommissions(tour.commissions, tour.commission_amount),
         services: asServices(tour.services),
         needs_review: tour.needs_review,
         created_at: tour.created_at,

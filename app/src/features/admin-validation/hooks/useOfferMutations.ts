@@ -11,6 +11,12 @@ import { normalizeDepartureTimes } from "@/lib/normalize-departures";
 async function persistOffer(offer: TourDetail): Promise<void> {
   const supabase = getSupabase();
 
+  // Drop empty rows (both label blank AND amount null) before persisting so
+  // the JSONB stays clean; this also matches the validation rule.
+  const cleanedCommissions = (offer.commissions ?? []).filter(
+    (c) => (c.label && c.label.trim() !== "") || c.amount !== null,
+  );
+
   const { error: tourErr } = await supabase
     .from("tours")
     .update({
@@ -26,7 +32,7 @@ async function persistOffer(offer: TourDetail): Promise<void> {
       is_global_pricing: offer.is_global_pricing ?? false,
       global_pricing: offer.global_pricing,
       lead_price: offer.lead_price,
-      commission_amount: offer.commission_amount,
+      commissions: cleanedCommissions,
       services: offer.services ?? { included: [], excluded: [] },
     })
     .eq("id", offer.id);
