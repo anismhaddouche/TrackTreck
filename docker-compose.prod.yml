@@ -1,0 +1,417 @@
+# TrackTreck — Production stack with SELF-HOSTED Supabase (Hetzner CX23+).
+#
+# Public ports: 80 / 443 (Caddy) only.
+# Internal services (Supabase stack, n8n, Evolution + its Postgres/Redis, app)
+# talk over the private `tracktreck` Docker network.
+#
+# CX23 (4 GB RAM) WARNING:
+#   This stack idles around ~2 GB and easily peaks above 3.5 GB under load.
+#   It will boot on CX23 for an MVP / demo, but CX33 (8 GB) is the recommended
+#   minimum for any real production use. See README_DEPLOYMENT.md §11.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  tracktreck:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+  n8n_data:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
+  supabase_db_data:
+  supabase_storage_data:
+
+services:
+  # =========================================================================
+  # Reverse proxy
+  # =========================================================================
+  caddy:
+    image: caddy:2.8.4-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+    networks: [ tracktreck ]
+    depends_on:
+      - app
+      - n8n
+      - evolution-api
+      - supabase-kong
+    logging: *default-logging
+
+  # =========================================================================
+  # Admin / frontend (Vite SPA served by nginx)
+  # =========================================================================
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+        VITE_SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET}
+        VITE_N8N_INGESTION_WEBHOOK_URL: ${VITE_N8N_INGESTION_WEBHOOK_URL}
+    image: tracktreck-app:prod
+    container_name: tracktreck_app
+    restart: unless-stopped
+    expose: [ "80" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  # =========================================================================
+  # n8n (SQLite — keeps the box light)
+  # =========================================================================
+  n8n:
+    image: n8nio/n8n:2.20.9
+    container_name: n8n
+    restart: unless-stopped
+    expose: [ "5678" ]
+    environment:
+      DB_TYPE: sqlite
+      N8N_HOST: ${N8N_HOST:-${PUBLIC_HOST}}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      # NOTE: N8N_PATH is intentionally NOT set to /n8n/ here. Caddy uses
+      # `handle_path /n8n/*` which strips the prefix before forwarding, so n8n
+      # sees requests at the root and serves /assets/*.js correctly. Setting
+      # N8N_PATH=/n8n/ caused asset MIME-type breakage during VPS testing.
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-${N8N_PUBLIC_URL}}
+      WEBHOOK_URL: ${WEBHOOK_URL:-${N8N_PUBLIC_URL}/}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # Surfaced into n8n nodes that need to call out to LlamaParse / Supabase.
+      # Read by workflows via $env / Code nodes (N8N_BLOCK_ENV_ACCESS_IN_NODE
+      # must be false for that to work).
+      LLAMA_PARSE_API_KEY: ${LLAMA_PARSE_API_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
+      N8N_PROXY_HOPS: 1
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      # HTTP-only deployment for now: disable the secure-cookie flag, otherwise
+      # the editor login cookie is dropped by the browser.
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  # =========================================================================
+  # Evolution API — DEDICATED Postgres + Redis (NOT shared with Supabase)
+  # =========================================================================
+  evolution-postgres:
+    image: postgres:15.8-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=192MB
+    environment:
+      POSTGRES_USER: ${EVOLUTION_DB_USER}
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD}
+      POSTGRES_DB: ${EVOLUTION_DB_NAME}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER} -d ${EVOLUTION_DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  evolution-redis:
+    image: redis:7.4-alpine
+    container_name: evolution_redis
+    restart: unless-stopped
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru" ]
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution_api
+    restart: unless-stopped
+    depends_on:
+      evolution-postgres: { condition: service_healthy }
+      evolution-redis: { condition: service_healthy }
+    expose: [ "8080" ]
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: ${EVOLUTION_PUBLIC_URL}
+      CORS_ORIGIN: "*"
+      CORS_METHODS: "POST,GET,PUT,DELETE"
+      CORS_CREDENTIALS: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${EVOLUTION_DB_USER}:${EVOLUTION_DB_PASSWORD}@evolution-postgres:5432/${EVOLUTION_DB_NAME}?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://default:${REDIS_PASSWORD}@evolution-redis:6379
+      CACHE_REDIS_PREFIX_KEY: evolution-cache
+      CACHE_REDIS_TTL: "604800"
+      CACHE_REDIS_SAVE_INSTANCES: "true"
+      CACHE_LOCAL_ENABLED: "true"
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      LOG_LEVEL: "ERROR,WARN,INFO"
+      LOG_COLOR: "true"
+      DEL_INSTANCE: "false"
+      DEL_TEMP_INSTANCES: "true"
+      LANGUAGE: en
+      QRCODE_LIMIT: "30"
+      TELEMETRY_ENABLED: "false"
+      WEBSOCKET_ENABLED: "true"
+      CONFIG_SESSION_PHONE_CLIENT: "TrackTreck"
+      CONFIG_SESSION_PHONE_NAME: "Chrome"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  # =========================================================================
+  # SUPABASE self-hosted (minimal subset for CX23)
+  # Skipped to save RAM: realtime, edge-runtime, analytics, vector, inbucket.
+  # =========================================================================
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    container_name: supabase_db
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SUPABASE_DB_PASSWORD}
+      PGPORT: 5432
+      PGPASSWORD: ${SUPABASE_DB_PASSWORD}
+      JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - supabase_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -h localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-auth:
+    image: supabase/gotrue:v2.158.1
+    container_name: supabase_auth
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SUPABASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${SUPABASE_DB_PASSWORD}@supabase-db:5432/postgres
+      GOTRUE_SITE_URL: ${SUPABASE_SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SUPABASE_URI_ALLOW_LIST}
+      GOTRUE_DISABLE_SIGNUP: ${SUPABASE_DISABLE_SIGNUP:-false}
+      GOTRUE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: ${SUPABASE_MAILER_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_HOST: ${SUPABASE_SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SUPABASE_SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SUPABASE_SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SUPABASE_SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SUPABASE_SMTP_ADMIN_EMAIL:-admin@example.com}
+      GOTRUE_SMTP_SENDER_NAME: TrackTreck
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_SMS_AUTOCONFIRM: "true"
+    expose: [ "9999" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: supabase_rest
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${SUPABASE_DB_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: 3600
+    expose: [ "3000" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-storage:
+    image: supabase/storage-api:v1.11.13
+    container_name: supabase_storage
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+      supabase-rest: { condition: service_started }
+      supabase-imgproxy: { condition: service_started }
+    environment:
+      ANON_KEY: ${SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://supabase-rest:3000
+      PGRST_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${SUPABASE_DB_PASSWORD}@supabase-db:5432/postgres
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: ${S3_REGION:-local}
+      GLOBAL_S3_BUCKET: stub
+      # S3-compatible protocol credentials used by clients (n8n, scripts) that
+      # talk to Supabase Storage via its S3 protocol endpoint at
+      # http://supabase-storage:5000/s3 from inside Docker.
+      S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID}
+      S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET}
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://supabase-imgproxy:5001
+    volumes:
+      - supabase_storage_data:/var/lib/storage
+    expose: [ "5000" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-imgproxy:
+    image: darthsim/imgproxy:v3.25.0
+    container_name: supabase_imgproxy
+    restart: unless-stopped
+    environment:
+      IMGPROXY_BIND: ":5001"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: "true"
+    volumes:
+      - supabase_storage_data:/var/lib/storage:ro
+    expose: [ "5001" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.84.2
+    container_name: supabase_meta
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${SUPABASE_DB_PASSWORD}
+    expose: [ "8080" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-studio:
+    image: supabase/studio:2026.05.11-sha-5a5099a
+    container_name: supabase_studio
+    restart: unless-stopped
+    depends_on:
+      supabase-meta: { condition: service_started }
+    environment:
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      POSTGRES_PASSWORD: ${SUPABASE_DB_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORG:-TrackTreck}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-tracktreck}
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      LOGFLARE_API_KEY: stub
+      LOGFLARE_URL: http://localhost
+      NEXT_PUBLIC_ENABLE_LOGS: "false"
+      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+      # Bind to all interfaces (Next.js standalone defaults to localhost only).
+      HOSTNAME: "0.0.0.0"
+      # Needed by a few Studio pages that talk directly to Postgres.
+      POSTGRES_HOST: supabase-db
+      # Edge Functions UI tries to write here on first load; /tmp is fine since
+      # we don't run the Edge Runtime container.
+      EDGE_FUNCTIONS_MANAGEMENT_FOLDER: /tmp
+    expose: [ "3000" ]
+    networks: [ tracktreck ]
+    logging: *default-logging
+
+  supabase-kong:
+    image: kong:2.8.1
+    container_name: supabase_kong
+    restart: unless-stopped
+    depends_on:
+      supabase-auth: { condition: service_started }
+      supabase-rest: { condition: service_started }
+      supabase-storage: { condition: service_started }
+      supabase-studio: { condition: service_started }
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      DASHBOARD_USERNAME: ${STUDIO_USERNAME:-admin}
+      DASHBOARD_PASSWORD: ${STUDIO_PASSWORD}
+    volumes:
+      # Rendered by scripts/render-kong-config.sh — runs placeholder substitution
+      # because Kong does not resolve ${VAR} itself. NEVER mount supabase/kong.yml
+      # directly.
+      - ./.runtime/kong.yml:/home/kong/kong.yml:ro
+    expose: [ "8000" ]
+    networks: [ tracktreck ]
+    logging: *default-logging

@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+!*.env.example
+!*env.example
+
+# Build directories
+dist/
+build/
+.next/
+out/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Temp files
+.temp/
+tmp/
+
+.claude/
+
+# Generated runtime config (rendered Kong config contains secrets)
+.runtime/
+
+# Local DB / volume backups (may contain real data and secrets)
+backup-*/
+backups/
+*.sql.gz
+*.tgz

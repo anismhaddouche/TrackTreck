@@ -1,0 +1,182 @@
+# Caddy reverse proxy — HTTP-only, single :80 server with path-based routing.
+#
+# This file mirrors the EXACT working configuration verified on the VPS
+# (157.90.166.243). The complexity below is intentional: n8n, Evolution Manager,
+# Supabase Studio and Supabase Storage each demand slightly different path or
+# absolute-route handling. Do NOT simplify this back to a four-route layout —
+# we have empirically confirmed each branch is needed.
+#
+# Public URL layout (no DNS, no TLS):
+#   http://<PUBLIC_HOST>/admin           -> app:80              (Vite SPA, base=/admin/)
+#   http://<PUBLIC_HOST>/n8n             -> n8n:5678            (prefix STRIPPED — handle_path)
+#   http://<PUBLIC_HOST>/api             -> evolution-api:8080  (prefix stripped)
+#   http://<PUBLIC_HOST>/manager/login   -> evolution-api:8080  (Manager UI absolute paths)
+#   http://<PUBLIC_HOST>/supabase        -> supabase-kong:8000  (prefix stripped)
+#   http://<PUBLIC_HOST>/project/...     -> supabase-kong:8000  (Studio absolute path)
+#   http://<PUBLIC_HOST>/_next/...       -> supabase-kong:8000  (Studio assets)
+#   http://<PUBLIC_HOST>/rest|auth|storage|realtime/v1/...
+#                                        -> supabase-kong:8000  (Studio / Storage absolute APIs)
+#
+# Critical ordering note: the named matcher @supabase_studio_api MUST appear
+# BEFORE the generic /api/* Evolution route, otherwise Studio's own /api/*
+# fetches get routed to Evolution and Studio breaks.
+
+{
+    # HTTP-only: disable the automatic HTTPS / ACME pipeline entirely.
+    auto_https off
+}
+
+:80 {
+    encode zstd gzip
+
+    # Allow large Storage uploads (Supabase storage).
+    request_body {
+        max_size 100MB
+    }
+
+    # =========================================================================
+    # Admin SPA (Vite build with base=/admin/)
+    # =========================================================================
+    redir /admin /admin/ 308
+    handle_path /admin/* {
+        reverse_proxy app:80
+    }
+
+    # =========================================================================
+    # n8n — handle_path STRIPS the /n8n prefix.
+    #
+    # With `handle /n8n/*` (no strip) n8n returned its index.html for asset
+    # requests (/n8n/assets/*.js -> Content-Type: text/html) and the editor UI
+    # rendered blank. `handle_path /n8n/*` rewrites /n8n/assets/x.js to
+    # /assets/x.js upstream, which n8n serves with the correct
+    # Content-Type: text/javascript. DO NOT switch back to `handle`.
+    # =========================================================================
+    redir /n8n /n8n/ 308
+    handle_path /n8n/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Supabase Studio API calls — MUST come BEFORE the generic /api/* route.
+    #
+    # Studio (Next.js) emits absolute /api/{profile,projects,organizations,
+    # platform,branches,database,storage,auth,edge-functions,integrations}
+    # fetches from the browser. Without this matcher those would land on the
+    # Evolution API and break Studio. Each prefix corresponds to a Studio
+    # internal Next.js route.
+    # =========================================================================
+    @supabase_studio_api {
+        path /api/profile* /api/projects* /api/organizations* /api/platform* /api/branches* /api/database* /api/storage* /api/auth* /api/edge-functions* /api/integrations*
+    }
+    handle @supabase_studio_api {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Evolution API (REST)
+    # =========================================================================
+    redir /api /api/ 308
+    handle_path /api/* {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Evolution Manager (UI) — lives at /manager/login and emits absolute
+    # /assets/* and /favicon.ico requests. We forward them straight to the
+    # Evolution container (do NOT strip — the Manager bundle expects /manager).
+    #
+    # IMPORTANT: the "Server URL" field inside the Manager login form must be
+    #   http://<PUBLIC_HOST>/api
+    # (the public Evolution API base, NOT the Manager URL).
+    # =========================================================================
+    handle /manager* {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+    handle /assets/* {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+    handle /favicon.ico {
+        reverse_proxy evolution-api:8080
+    }
+
+    # =========================================================================
+    # Supabase Kong gateway (prefix stripped — Kong's own routes match cleanly).
+    # =========================================================================
+    redir /supabase /supabase/ 308
+    handle_path /supabase/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Supabase Studio — absolute paths Next.js bakes into its bundle.
+    # The Studio container expects these at the document root, so they bypass
+    # the /supabase prefix and go straight to Kong (which routes them to
+    # supabase-studio).
+    # =========================================================================
+    handle /project/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /_next/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /img/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /images/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Supabase absolute API routes.
+    # Required so Studio (Storage preview/download in particular) and any
+    # client that hits /storage/v1/* directly can reach Kong without going
+    # through the /supabase prefix.
+    # =========================================================================
+    handle /storage/v1/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /auth/v1/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /rest/v1/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+    handle /realtime/v1/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # Default fallback
+    # =========================================================================
+    handle {
+        respond "TrackTreck - try /admin, /n8n, /api or /supabase" 404
+    }
+}
