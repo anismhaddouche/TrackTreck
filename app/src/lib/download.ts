@@ -11,7 +11,7 @@ export function buildOfferJson(offer: TourDetail): Record<string, unknown> {
     duration_nights: offer.duration_nights,
     airline: offer.airline,
     description: offer.description,
-    itinerary: offer.itinerary ?? {},
+    itinerary: offer.itinerary ?? [],
     status: offer.status,
     photo_urls: offer.photo_urls ?? [],
     is_global_pricing: offer.is_global_pricing ?? false,

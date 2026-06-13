@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSupabase } from "@/lib/supabase";
+import { normalizeItinerary } from "@/lib/itinerary";
 import {
   inferSourceLabelFromPhotoUrls,
   isDefaultAgencyName,
@@ -132,15 +133,6 @@ function asServices(value: unknown): { included: string[]; excluded: string[] } 
   return { included: arr(v.included), excluded: arr(v.excluded) };
 }
 
-function asItinerary(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
-  }
-  return out;
-}
-
 function pickAgency(raw: RawTour["agencies"]) {
   if (!raw) return null;
   return Array.isArray(raw) ? (raw[0] ?? null) : raw;
@@ -256,7 +248,7 @@ export function useOfferDetail(idParam: string | undefined) {
         duration_nights: tour.duration_nights,
         airline: tour.airline,
         description: tour.description,
-        itinerary: asItinerary(tour.itinerary),
+        itinerary: normalizeItinerary(tour.itinerary),
         status: tour.status,
         photo_urls: tour.photo_urls,
         is_global_pricing: tour.is_global_pricing,

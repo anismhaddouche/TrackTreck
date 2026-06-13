@@ -27,7 +27,7 @@ async function persistOffer(offer: TourDetail): Promise<void> {
       duration_nights: offer.duration_nights,
       airline: offer.airline,
       description: offer.description,
-      itinerary: offer.itinerary ?? {},
+      itinerary: offer.itinerary ?? [],
       photo_urls: offer.photo_urls ?? [],
       is_global_pricing: offer.is_global_pricing ?? false,
       global_pricing: offer.global_pricing,

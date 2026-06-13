@@ -40,6 +40,7 @@ import type {
   Departure,
   HotelOption,
   HotelPricing,
+  ItineraryDay,
   TourDetail,
   TourStep,
 } from "@/lib/types";
@@ -297,19 +298,9 @@ export function EditableOfferForm({ offer, onChange }: EditableOfferFormProps) {
             onChange={(v) => update("description", v || null)}
           />
 
-          <FieldTextarea
-            label="Itinéraire (une ligne par jour, format day_N: texte)"
-            value={Object.entries(offer.itinerary ?? {})
-              .map(([k, v]) => `${k}: ${v}`)
-              .join("\n")}
-            onChange={(raw) => {
-              const out: Record<string, string> = {};
-              for (const line of raw.split(/\r?\n/)) {
-                const m = line.match(/^\s*(day_\d+)\s*:\s*(.*)$/i);
-                if (m) out[m[1].toLowerCase()] = m[2].trim();
-              }
-              update("itinerary", out);
-            }}
+          <ItinerarySection
+            days={offer.itinerary ?? []}
+            onChange={(next) => update("itinerary", next)}
           />
 
           <Separator />
@@ -818,6 +809,84 @@ function FieldTextarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
+    </div>
+  );
+}
+
+function ItinerarySection({
+  days,
+  onChange,
+}: {
+  days: ItineraryDay[];
+  onChange: (next: ItineraryDay[]) => void;
+}) {
+  // Days are renumbered sequentially after every mutation so the stored
+  // `day` values always match their position (1, 2, 3, …).
+  function renumber(list: ItineraryDay[]): ItineraryDay[] {
+    return list.map((d, i) => ({ ...d, day: i + 1 }));
+  }
+  function updateDay(idx: number, patch: Partial<ItineraryDay>) {
+    onChange(renumber(days.map((d, i) => (i === idx ? { ...d, ...patch } : d))));
+  }
+  function removeDay(idx: number) {
+    onChange(renumber(days.filter((_, i) => i !== idx)));
+  }
+  function addDay() {
+    onChange(renumber([...days, { day: days.length + 1, title: "", items: [] }]));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>Itinéraire (jour par jour)</Label>
+        <Button type="button" variant="outline" size="sm" onClick={addDay}>
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Ajouter un jour
+        </Button>
+      </div>
+      {days.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Aucun jour défini. Cliquez sur « Ajouter un jour » pour commencer.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {days.map((d, idx) => (
+            <div
+              key={idx}
+              className="space-y-2 rounded-md border bg-muted/20 p-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Jour {d.day}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeDay(idx)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <FieldText
+                label="Titre"
+                value={d.title}
+                onChange={(v) => updateDay(idx, { title: v })}
+              />
+              <FieldTextarea
+                label="Activités (une par ligne)"
+                value={d.items.join("\n")}
+                onChange={(raw) =>
+                  updateDay(idx, {
+                    items: raw
+                      .split(/\r?\n/)
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

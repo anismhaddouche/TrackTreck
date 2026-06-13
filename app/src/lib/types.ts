@@ -1,6 +1,10 @@
 // Domain types mirror the existing Supabase schema. They MUST stay aligned with
 // supabase/migrations — never extend the schema from the frontend side.
 
+import type { ItineraryDay } from "./itinerary";
+
+export type { ItineraryDay };
+
 export type OfferStatus =
   | "draft"
   | "pending_review"
@@ -86,7 +90,7 @@ export interface TourDetail {
   duration_nights: number | null;
   airline: string | null;
   description: string | null;
-  itinerary: Record<string, string> | null;
+  itinerary: ItineraryDay[];
   status: OfferStatus | null;
   photo_urls: string[] | null;
   is_global_pricing: boolean | null;
