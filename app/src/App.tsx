@@ -15,19 +15,10 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AdminLayout />}>
-        <Route
-          index
-          element={<Navigate to="/admin/validation" replace />}
-        />
-        <Route path="/admin/validation" element={<AdminValidationPage />} />
-        <Route
-          path="/admin/validation/:id"
-          element={<OfferValidationDetail />}
-        />
-        <Route
-          path="*"
-          element={<Navigate to="/admin/validation" replace />}
-        />
+        <Route index element={<Navigate to="/validation" replace />} />
+        <Route path="/validation" element={<AdminValidationPage />} />
+        <Route path="/validation/:id" element={<OfferValidationDetail />} />
+        <Route path="*" element={<Navigate to="/validation" replace />} />
       </Route>
     </Routes>
   );

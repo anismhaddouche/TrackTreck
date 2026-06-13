@@ -194,7 +194,7 @@ export function OffersReviewList({
                   className="group cursor-pointer"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest("a,button")) return;
-                    navigate(`/admin/validation/${offer.id}`);
+                    navigate(`/validation/${offer.id}`);
                   }}
                 >
                   <TableCell className="max-w-[320px] py-3">
@@ -250,7 +250,7 @@ export function OffersReviewList({
                       size="sm"
                       className="opacity-90 transition-opacity group-hover:opacity-100"
                     >
-                      <Link to={`/admin/validation/${offer.id}`}>
+                      <Link to={`/validation/${offer.id}`}>
                         Vérifier
                         <ArrowRight className="h-4 w-4" />
                       </Link>

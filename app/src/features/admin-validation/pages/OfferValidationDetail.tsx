@@ -79,7 +79,7 @@ export function OfferValidationDetail() {
     return (
       <div className="space-y-4">
         <Button asChild variant="ghost" size="sm">
-          <Link to="/admin/validation">
+          <Link to="/validation">
             <ArrowLeft className="h-4 w-4" />
             Retour à la liste
           </Link>
@@ -113,7 +113,7 @@ export function OfferValidationDetail() {
       if (dirty) await save.mutateAsync(offer);
       await validate.mutateAsync(offer.id);
       toast.success("Offre validée.");
-      navigate("/admin/validation");
+      navigate("/validation");
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Échec de la validation.",
@@ -127,7 +127,7 @@ export function OfferValidationDetail() {
       await remove.mutateAsync(offer.id);
       toast.success("Offre supprimée.");
       setConfirmDelete(false);
-      navigate("/admin/validation");
+      navigate("/validation");
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Échec de la suppression.",
@@ -150,7 +150,7 @@ export function OfferValidationDetail() {
     <div className="space-y-5">
       <div>
         <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/admin/validation">
+          <Link to="/validation">
             <ArrowLeft className="h-4 w-4" />
             Retour à la liste
           </Link>
