@@ -83,10 +83,10 @@ async function persistOffer(offer: TourDetail): Promise<void> {
   if (delDepErr) throw delDepErr;
 
   if (offer.departures.length > 0) {
-    // Enforce the business rule deterministically: arrival = departure + 1h.
-    // The form already normalizes this on edit, but we re-apply it here as a
-    // server-write guard in case a payload sneaks past the UI (e.g. JSON tab,
-    // future API caller).
+    // Guarantee a non-null arrival for every departure before writing: keep the
+    // real flight-plan arrival when present, otherwise derive departure + 1h.
+    // This runs as a server-write guard for payloads that bypass the UI
+    // (e.g. JSON tab, future API caller).
     const normalizedDepartures = normalizeDepartureTimes(offer.departures);
     const { error: depErr } = await supabase.from("departures").insert(
       normalizedDepartures.map((d) => ({

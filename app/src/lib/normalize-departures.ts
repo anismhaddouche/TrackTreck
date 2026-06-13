@@ -34,10 +34,16 @@ export function addOneHourToIsoLocal(
   return s ? `${base}:${pad(date.getSeconds())}` : base;
 }
 
-// Business rule: arrival = departure + 1h, for both outbound and return.
-// This overrides any value the LLM extractor may have produced — the only
-// authoritative inputs are the departure timestamps. If a departure is
-// missing/invalid, the corresponding arrival is set to null.
+// Arrival times: prefer the real flight-plan value when present; only derive
+// `arrival = departure + 1h` as a fallback when the arrival is missing. This
+// preserves authentic times coming from a flight plan (e.g. 13:45, 13:15) while
+// still guaranteeing a non-null arrival for the `NOT NULL` DB columns whenever a
+// departure timestamp exists. If a departure is missing/invalid the arrival is
+// left null (the row is incomplete and the caller should skip it).
+function hasValue(v: string | null | undefined): v is string {
+  return typeof v === "string" && v.trim() !== "";
+}
+
 export function normalizeDepartureTimes<
   T extends Pick<
     Departure,
@@ -48,12 +54,16 @@ export function normalizeDepartureTimes<
   >,
 >(departures: T[]): T[] {
   return departures.map((dep) => {
-    const fwdArr = dep.flight_departure_time
-      ? addOneHourToIsoLocal(dep.flight_departure_time)
-      : "";
-    const retArr = dep.return_flight_departure_time
-      ? addOneHourToIsoLocal(dep.return_flight_departure_time)
-      : "";
+    const fwdArr = hasValue(dep.flight_arrival_time)
+      ? dep.flight_arrival_time
+      : dep.flight_departure_time
+        ? addOneHourToIsoLocal(dep.flight_departure_time)
+        : "";
+    const retArr = hasValue(dep.return_flight_arrival_time)
+      ? dep.return_flight_arrival_time
+      : dep.return_flight_departure_time
+        ? addOneHourToIsoLocal(dep.return_flight_departure_time)
+        : "";
     return {
       ...dep,
       flight_arrival_time: fwdArr || null,

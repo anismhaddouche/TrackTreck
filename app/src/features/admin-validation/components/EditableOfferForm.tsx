@@ -1191,12 +1191,17 @@ function DepartureEditor({
           value={departure.flight_departure_time ?? ""}
           onChange={(v) => {
             const trimmed = v || null;
-            const arrival = trimmed ? addOneHourToIsoLocal(trimmed) : "";
-            onChange({
+            const next: Departure = {
               ...departure,
               flight_departure_time: trimmed,
-              flight_arrival_time: arrival || null,
-            });
+            };
+            // Only auto-fill the arrival when it is still empty — a real
+            // flight-plan arrival entered by the user must be preserved.
+            if (trimmed && !departure.flight_arrival_time) {
+              const arrival = addOneHourToIsoLocal(trimmed);
+              if (arrival) next.flight_arrival_time = arrival;
+            }
+            onChange(next);
           }}
         />
         <FieldText
@@ -1211,12 +1216,17 @@ function DepartureEditor({
           value={departure.return_flight_departure_time ?? ""}
           onChange={(v) => {
             const trimmed = v || null;
-            const arrival = trimmed ? addOneHourToIsoLocal(trimmed) : "";
-            onChange({
+            const next: Departure = {
               ...departure,
               return_flight_departure_time: trimmed,
-              return_flight_arrival_time: arrival || null,
-            });
+            };
+            // Only auto-fill the arrival when it is still empty — preserve a
+            // real flight-plan return arrival.
+            if (trimmed && !departure.return_flight_arrival_time) {
+              const arrival = addOneHourToIsoLocal(trimmed);
+              if (arrival) next.return_flight_arrival_time = arrival;
+            }
+            onChange(next);
           }}
         />
         <FieldText
