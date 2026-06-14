@@ -15,7 +15,9 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AdminLayout />}>
-        <Route index element={<Navigate to="/validation" replace />} />
+        {/* Relative to the basename ("/admin") — never prefix "/admin" here,
+            otherwise the redirect would resolve to "/admin/admin/validation". */}
+        <Route index element={<Navigate to="validation" replace />} />
         <Route path="/validation" element={<AdminValidationPage />} />
         <Route path="/validation/:id" element={<OfferValidationDetail />} />
         <Route path="*" element={<Navigate to="/validation" replace />} />
