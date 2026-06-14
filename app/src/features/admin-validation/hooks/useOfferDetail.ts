@@ -145,6 +145,12 @@ export function useOfferDetail(idParam: string | undefined) {
   return useQuery<TourDetail>({
     queryKey: ["offers", "detail", idNum],
     enabled,
+    // Always revalidate when the detail page opens. Without this, a copy cached
+    // earlier in the session (e.g. before n8n added the itinerary) is served
+    // as-is on SPA navigation, so the itinerary only appears after a hard
+    // refresh. Forcing a refetch on mount keeps the opened offer fresh.
+    refetchOnMount: "always",
+    staleTime: 0,
     queryFn: async (): Promise<TourDetail> => {
       const supabase = getSupabase();
 

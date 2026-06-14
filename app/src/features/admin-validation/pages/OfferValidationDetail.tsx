@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -56,8 +56,28 @@ export function OfferValidationDetail() {
   const [draft, setDraft] = useState<TourDetail | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Snapshot of the server data last synced into the draft. This lets us reset
+  // the form when a *different* offer loads (navigation) or when fresh server
+  // data arrives for an unedited offer (e.g. a background refetch that finally
+  // brings the itinerary), while never clobbering the user's in-progress edits.
+  const syncedRef = useRef<{ id: number; snapshot: string } | null>(null);
+
   useEffect(() => {
-    if (data) setDraft(data);
+    if (!data) return;
+    const snapshot = JSON.stringify(data);
+    const synced = syncedRef.current;
+    setDraft((prev) => {
+      // First load, or navigation to another offer → take the server copy.
+      if (prev == null || synced == null || synced.id !== data.id) return data;
+      // Server data unchanged since last sync → keep the current draft
+      // (preserves the user's edits).
+      if (snapshot === synced.snapshot) return prev;
+      // Server data changed (refetch). Adopt it only if the user has not
+      // edited the form; otherwise keep their edits.
+      const userEdited = JSON.stringify(prev) !== synced.snapshot;
+      return userEdited ? prev : data;
+    });
+    syncedRef.current = { id: data.id, snapshot };
   }, [data]);
 
   const offer = draft ?? data;
