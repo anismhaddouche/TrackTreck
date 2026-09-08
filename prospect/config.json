@@ -1,0 +1,13 @@
+{
+  "evolution_api_url": "http://127.0.0.1/api",
+  "instance_name": "tracktrek",
+  "api_key": "b42366c11ffbe9fb3def9b655d3002c3d26dd9f17581e2e0b575c60fb3421859",
+  "target_group_id": "120363417369802582@g.us",
+  "target_group_name": "R.M Annonce B2b Agence de voyage",
+  "days_interval": 3,
+  "slots": [
+    { "name": "morning", "hour": 10, "minute": 20 },
+    { "name": "afternoon", "hour": 16, "minute": 40 }
+  ],
+  "jitter_max_minutes": 25
+}

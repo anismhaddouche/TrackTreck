@@ -50,3 +50,6 @@ backup-*/
 backups/
 *.sql.gz
 *.tgz
+
+# Prospect publisher runtime state
+prospect/history.json
