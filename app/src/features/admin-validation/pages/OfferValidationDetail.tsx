@@ -44,6 +44,9 @@ import { formatPrice } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TourDetail } from "@/lib/types";
+import { computeTourQualityScore } from "@/lib/quality-score";
+import { QualityScoreCard } from "../components/QualityScoreCard";
+import { CircularScore } from "@/components/ui/circular-score";
 
 export function OfferValidationDetail() {
   const { id } = useParams();
@@ -81,6 +84,10 @@ export function OfferValidationDetail() {
   }, [data]);
 
   const offer = draft ?? data;
+  const scoreResult = useMemo(
+    () => (offer ? computeTourQualityScore(offer) : null),
+    [offer],
+  );
   const dirty = useMemo(
     () => (data && offer ? JSON.stringify(offer) !== JSON.stringify(data) : false),
     [offer, data],
@@ -234,13 +241,28 @@ export function OfferValidationDetail() {
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-1 rounded-lg border border-border/60 bg-background/40 px-4 py-3">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Prix d'appel
-            </span>
-            <span className="text-2xl font-semibold tabular-nums">
-              {formatPrice(offer.lead_price)}
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            {scoreResult && (
+              <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/40 px-4 py-2">
+                <CircularScore score={scoreResult.score} size="md" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Complétude
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {scoreResult.badgeLabel}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="flex flex-col items-end gap-1 rounded-lg border border-border/60 bg-background/40 px-4 py-3">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Prix d'appel
+              </span>
+              <span className="text-2xl font-semibold tabular-nums">
+                {formatPrice(offer.lead_price)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -301,6 +323,8 @@ export function OfferValidationDetail() {
           </div>
         </div>
       </Card>
+
+      {scoreResult && <QualityScoreCard scoreResult={scoreResult} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <OriginalSourcePanel

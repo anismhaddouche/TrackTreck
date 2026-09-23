@@ -4,12 +4,17 @@ import { getSupabase } from "@/lib/supabase";
 import type { TourDetail } from "@/lib/types";
 import { normalizeDepartureTimes } from "@/lib/normalize-departures";
 
+import { computeTourQualityScore } from "@/lib/quality-score";
+
 // Persists corrections by updating the parent `tours` row, then replacing the
 // nested rows (tour_steps + hotel_options for each step, departures). This
 // mirrors how the n8n pipeline writes nested data and keeps the read model
 // consistent without touching the schema.
 async function persistOffer(offer: TourDetail): Promise<void> {
   const supabase = getSupabase();
+
+  // Compute quality score on the fly so it stays in sync upon saving
+  const scoreResult = computeTourQualityScore(offer);
 
   // Drop empty rows (both label blank AND amount null) before persisting so
   // the JSONB stays clean; this also matches the validation rule.
@@ -34,6 +39,8 @@ async function persistOffer(offer: TourDetail): Promise<void> {
       lead_price: offer.lead_price,
       commissions: cleanedCommissions,
       services: offer.services ?? { included: [], excluded: [] },
+      quality_score: scoreResult.score,
+      quality_details: scoreResult.dimensions,
     })
     .eq("id", offer.id);
   if (tourErr) throw tourErr;
@@ -107,7 +114,7 @@ export function useSaveOffer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: persistOffer,
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data: unknown, variables: TourDetail) => {
       qc.invalidateQueries({ queryKey: ["offers", "detail", variables.id] });
       qc.invalidateQueries({ queryKey: ["offers", "to-validate"] });
     },
@@ -125,7 +132,7 @@ export function useValidateOffer() {
         .eq("id", offerId);
       if (error) throw error;
     },
-    onSuccess: (_data, offerId) => {
+    onSuccess: (_data: unknown, offerId: number) => {
       qc.invalidateQueries({ queryKey: ["offers", "detail", offerId] });
       qc.invalidateQueries({ queryKey: ["offers", "to-validate"] });
     },
@@ -147,7 +154,7 @@ export function useDeleteOffer() {
         .eq("id", offerId);
       if (error) throw error;
     },
-    onSuccess: (_data, offerId) => {
+    onSuccess: (_data: unknown, offerId: number) => {
       qc.removeQueries({ queryKey: ["offers", "detail", offerId] });
       qc.invalidateQueries({ queryKey: ["offers", "to-validate"] });
     },

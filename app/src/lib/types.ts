@@ -78,6 +78,8 @@ export interface TourSummary {
   status: OfferStatus | null;
   needs_review: boolean;
   created_at: string | null;
+  quality_score?: number | null;
+  quality_details?: unknown;
 }
 
 export interface TourDetail {
@@ -101,6 +103,8 @@ export interface TourDetail {
   services: OfferServices | null;
   needs_review: boolean;
   created_at: string | null;
+  quality_score?: number | null;
+  quality_details?: unknown;
   steps: TourStep[];
   departures: Departure[];
 }

@@ -43,6 +43,7 @@ import {
 import { OfferStatusBadge } from "./OfferStatusBadge";
 
 import { formatDate, formatPrice } from "@/lib/utils";
+import { CircularScore } from "@/components/ui/circular-score";
 import type { TourSummary } from "@/lib/types";
 
 interface OffersReviewListProps {
@@ -62,6 +63,8 @@ export function OffersReviewList({
   const [search, setSearch] = useState("");
   const [country, setCountry] = useState("all");
   const [agencyId, setAgencyId] = useState("all");
+  const [scoreFilter, setScoreFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("created_desc");
 
   const countries = useMemo(() => {
     const set = new Set<string>();
@@ -79,15 +82,28 @@ export function OffersReviewList({
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return offers.filter((o) => {
+    const result = offers.filter((o) => {
       if (s && !(o.title ?? "").toLowerCase().includes(s)) return false;
       if (country !== "all" && !(o.countries ?? []).includes(country))
         return false;
       if (agencyId !== "all" && String(o.agency_id ?? "") !== agencyId)
         return false;
+      const score = o.quality_score ?? 0;
+      if (scoreFilter === "excellent" && score < 80) return false;
+      if (scoreFilter === "good" && (score < 60 || score >= 80)) return false;
+      if (scoreFilter === "fair" && (score < 40 || score >= 60)) return false;
+      if (scoreFilter === "poor" && score >= 40) return false;
       return true;
     });
-  }, [offers, search, country, agencyId]);
+
+    return result.sort((a, b) => {
+      if (sortBy === "score_desc") return (b.quality_score ?? 0) - (a.quality_score ?? 0);
+      if (sortBy === "score_asc") return (a.quality_score ?? 0) - (b.quality_score ?? 0);
+      if (sortBy === "price_asc") return (a.lead_price ?? 0) - (b.lead_price ?? 0);
+      if (sortBy === "price_desc") return (b.lead_price ?? 0) - (a.lead_price ?? 0);
+      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+    });
+  }, [offers, search, country, agencyId, scoreFilter, sortBy]);
 
   const totalShown = filtered.length;
 
@@ -121,7 +137,7 @@ export function OffersReviewList({
             />
           </div>
           <Select value={country} onValueChange={setCountry}>
-            <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectTrigger className="w-full sm:w-[150px]">
               <SelectValue placeholder="Pays" />
             </SelectTrigger>
             <SelectContent>
@@ -134,7 +150,7 @@ export function OffersReviewList({
             </SelectContent>
           </Select>
           <Select value={agencyId} onValueChange={setAgencyId}>
-            <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectTrigger className="w-full sm:w-[170px]">
               <SelectValue placeholder="Agence" />
             </SelectTrigger>
             <SelectContent>
@@ -144,6 +160,30 @@ export function OffersReviewList({
                   {a.name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={scoreFilter} onValueChange={setScoreFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]">
+              <SelectValue placeholder="Qualité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous scores</SelectItem>
+              <SelectItem value="excellent">≥ 80% (Complet)</SelectItem>
+              <SelectItem value="good">60 - 79% (Bon)</SelectItem>
+              <SelectItem value="fair">40 - 59% (Moyen)</SelectItem>
+              <SelectItem value="poor">&lt; 40% (Critique)</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-full sm:w-[160px]">
+              <SelectValue placeholder="Trier par" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="created_desc">Plus récentes</SelectItem>
+              <SelectItem value="score_desc">Score décroissant</SelectItem>
+              <SelectItem value="score_asc">Score croissant</SelectItem>
+              <SelectItem value="price_asc">Prix croissant</SelectItem>
+              <SelectItem value="price_desc">Prix décroissant</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -159,7 +199,8 @@ export function OffersReviewList({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[28%]">Offre</TableHead>
+              <TableHead className="w-[24%]">Offre</TableHead>
+              <TableHead className="w-[70px] text-center">Score</TableHead>
               <TableHead>Pays</TableHead>
               <TableHead>Agence</TableHead>
               <TableHead className="text-right">Nuits</TableHead>
@@ -174,7 +215,7 @@ export function OffersReviewList({
             {isLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={`skeleton-${i}`}>
-                  {Array.from({ length: 9 }).map((_, j) => (
+                  {Array.from({ length: 10 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -183,7 +224,7 @@ export function OffersReviewList({
               ))
             ) : filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <ListEmptyState hasAny={offers.length > 0} />
                 </TableCell>
               </TableRow>
@@ -197,7 +238,7 @@ export function OffersReviewList({
                     navigate(`/validation/${offer.id}`);
                   }}
                 >
-                  <TableCell className="max-w-[320px] py-3">
+                  <TableCell className="max-w-[300px] py-3">
                     <div className="flex flex-col">
                       <span className="truncate font-medium">
                         {offer.title ?? (
@@ -207,6 +248,11 @@ export function OffersReviewList({
                       <span className="text-xs text-muted-foreground">
                         ID #{offer.id}
                       </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center py-2">
+                    <div className="flex justify-center" title={`Complétude: ${offer.quality_score ?? 0}%`}>
+                      <CircularScore score={offer.quality_score ?? 0} size="sm" />
                     </div>
                   </TableCell>
                   <TableCell>

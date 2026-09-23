@@ -34,6 +34,8 @@ interface RawTour {
   services: unknown;
   needs_review: boolean;
   created_at: string | null;
+  quality_score: number | null;
+  quality_details: unknown;
   agencies:
     | { id: number; name: string; email: string | null; phone: string | null; town: string | null }
     | Array<{ id: number; name: string; email: string | null; phone: string | null; town: string | null }>
@@ -160,6 +162,7 @@ export function useOfferDetail(idParam: string | undefined) {
           `id, title, agency_id, countries, duration_nights, airline,
            description, itinerary, status, photo_urls, is_global_pricing,
            global_pricing, lead_price, commission_amount, commissions, services, needs_review, created_at,
+           quality_score, quality_details,
            agencies:agency_id ( id, name, email, phone, town )`,
         )
         .eq("id", idNum)
@@ -270,6 +273,8 @@ export function useOfferDetail(idParam: string | undefined) {
         services: asServices(tour.services),
         needs_review: tour.needs_review,
         created_at: tour.created_at,
+        quality_score: tour.quality_score ?? null,
+        quality_details: tour.quality_details ?? null,
         steps: stepsWithHotels,
         departures: departuresMapped,
       };

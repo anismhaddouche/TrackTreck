@@ -19,6 +19,7 @@ interface RawTourRow {
   status: TourSummary["status"];
   needs_review: boolean;
   created_at: string | null;
+  quality_score: number | null;
   agencies: { id: number; name: string } | { id: number; name: string }[] | null;
 }
 
@@ -40,6 +41,7 @@ export function useOffersToValidate() {
         .select(
           `id, title, countries, agency_id, duration_nights, airline,
            lead_price, photo_urls, status, needs_review, created_at,
+           quality_score,
            agencies:agency_id ( id, name )`,
         )
         // Show offers that still need review (drafts / in-progress) AND keep
@@ -103,6 +105,7 @@ export function useOffersToValidate() {
           status: row.status,
           needs_review: row.needs_review,
           created_at: row.created_at,
+          quality_score: row.quality_score ?? null,
         };
       });
     },
