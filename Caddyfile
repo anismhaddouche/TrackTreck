@@ -29,6 +29,10 @@
 :80 {
     encode zstd gzip
 
+    log {
+        output stdout
+    }
+
     # Allow large Storage uploads (Supabase storage).
     request_body {
         max_size 100MB
@@ -148,10 +152,13 @@
     }
 
     # =========================================================================
-    # n8n Static, REST & Assets
-    # n8n sets 'Referrer-Policy: no-referrer', so browser bundle chunk imports
-    # (/assets/*.js, /assets/*.css) and API calls (/rest/*) have no Referer header.
-    # All general /assets/*, /static/*, and /rest/* routes must target n8n.
+    # n8n Runtime Endpoints & Assets
+    # n8n serves:
+    # - Frontend bundle: /assets/*, /static/*
+    # - Internal API: /rest/* (excluding /rest/v1/* which belongs to Supabase)
+    # - Init & type data: /types/* (/types/nodes.json, /types/credentials.json, etc.)
+    # - Node schemas & icons: /schemas/*, /icons/*
+    # - Webhooks, forms, health: /webhook/*, /webhook-test/*, /form/*, /healthz*
     # =========================================================================
     handle /static/* {
         reverse_proxy n8n:5678 {
@@ -159,13 +166,73 @@
         }
     }
 
-    handle /rest/* {
+    handle /assets/* {
         reverse_proxy n8n:5678 {
             flush_interval -1
         }
     }
 
-    handle /assets/* {
+    handle /types/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /schemas/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /icons/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /healthz* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /webhook/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /webhook-test/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /form/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /form-test/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /mcp/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /mcp-test/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /rest/* {
         reverse_proxy n8n:5678 {
             flush_interval -1
         }
