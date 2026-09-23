@@ -232,6 +232,31 @@
         }
     }
 
+    handle /workflows* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /workflow* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    handle /executions* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    # Supabase PostgREST API must be handled before the generic n8n /rest/* route
+    handle /rest/v1/* {
+        reverse_proxy supabase-kong:8000 {
+            flush_interval -1
+        }
+    }
+
     handle /rest/* {
         reverse_proxy n8n:5678 {
             flush_interval -1
@@ -291,11 +316,6 @@
         }
     }
     handle /auth/v1/* {
-        reverse_proxy supabase-kong:8000 {
-            flush_interval -1
-        }
-    }
-    handle /rest/v1/* {
         reverse_proxy supabase-kong:8000 {
             flush_interval -1
         }
