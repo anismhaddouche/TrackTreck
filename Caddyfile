@@ -117,6 +117,35 @@
             flush_interval -1
         }
     }
+    # =========================================================================
+    # n8n Static & Assets (when Referer is n8n, or static files)
+    # =========================================================================
+    handle /static/* {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    @n8n_assets {
+        header Referer *n8n*
+        path /assets/*
+    }
+    handle @n8n_assets {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
+    @n8n_rest {
+        header Referer *n8n*
+        path /rest/*
+    }
+    handle @n8n_rest {
+        reverse_proxy n8n:5678 {
+            flush_interval -1
+        }
+    }
+
     handle /assets/* {
         reverse_proxy evolution-api:8080 {
             flush_interval -1
