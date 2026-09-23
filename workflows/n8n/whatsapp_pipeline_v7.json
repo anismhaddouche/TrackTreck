@@ -18,7 +18,9 @@
       ],
       "id": "2071134b-b3d5-47b3-a9e8-0fedb31e44c1",
       "name": "Webhook",
-      "webhookId": "7b471905-3691-4018-8526-d17145d27d29"
+      "webhookId": "7b471905-3691-4018-8526-d17145d27d29",
+      "notesInFlow": true,
+      "notes": "Point d'entrée manuel / API externe : Permet de tester ou d'injecter manuellement des offres de voyage (JSON / multipart)."
     },
     {
       "parameters": {
@@ -33,7 +35,9 @@
         7440
       ],
       "id": "2e215239-a988-4e61-818c-d1cb7b6b0f5e",
-      "name": "Edit Fields"
+      "name": "Edit Fields",
+      "notesInFlow": true,
+      "notes": "Préparation des paramètres : Initialise les variables de requête et normalise les entrées directes."
     },
     {
       "parameters": {
@@ -74,7 +78,9 @@
           "id": "zrx5cwf9BuHo6Qcl",
           "name": "evolution-apikey"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Téléchargement Image WhatsApp : Récupère le binaire de l'image via l'API Evolution / WhatsApp CDN."
     },
     {
       "parameters": {
@@ -91,7 +97,8 @@
       ],
       "id": "c5ffc785-278a-4deb-b591-5905f74b4f33",
       "name": "Convert to File",
-      "notes": "Mettre ici la nouvelle clé "
+      "notes": "Conversion Binaire Image : Convertit le buffer base64 reçu en fichier binaire prêt pour LlamaParse et Supabase Storage.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -122,14 +129,15 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 5000,
-      "notesInFlow": false,
+      "notesInFlow": true,
       "credentials": {
         "googlePalmApi": {
           "id": "7jx6USGsXbjynkBr",
           "name": "Google Gemini(PaLM) Api account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notes": "Analyse Gemini Texte : Analyse sémantique directe pour les offres publiées uniquement sous forme de texte brut."
     },
     {
       "parameters": {
@@ -164,7 +172,9 @@
           "id": "zrx5cwf9BuHo6Qcl",
           "name": "evolution-apikey"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Téléchargement PDF WhatsApp : Récupère le binaire du document PDF via l'API Evolution."
     },
     {
       "parameters": {
@@ -180,7 +190,9 @@
         9040
       ],
       "id": "3c001dff-960f-4d79-99c2-300b012814ef",
-      "name": "Convert to File1"
+      "name": "Convert to File1",
+      "notesInFlow": true,
+      "notes": "Conversion Binaire PDF : Convertit le buffer base64 du PDF en fichier binaire pour LlamaParse."
     },
     {
       "parameters": {
@@ -194,7 +206,9 @@
       ],
       "id": "cd49440f-911d-427b-b1ea-2ea7549742ab",
       "name": "Wait",
-      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e"
+      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e",
+      "notesInFlow": true,
+      "notes": "Délai d'attente LlamaParse Image : Pause de quelques secondes avant d'interroger le résultat du parsing LlamaParse."
     },
     {
       "parameters": {
@@ -208,11 +222,13 @@
       ],
       "id": "4661f1b4-777d-45fa-aac7-cba2da3e6e78",
       "name": "Wait1",
-      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e"
+      "webhookId": "ef378949-6ee6-4e8d-a73e-8e24b0814d7e",
+      "notesInFlow": true,
+      "notes": "Délai d'attente LlamaParse PDF : Pause de quelques secondes avant d'interroger le résultat du parsing LlamaParse."
     },
     {
       "parameters": {
-        "jsCode": "const root = $input.first().json;\nconst binary = $input.first().binary || {};\n\nconst envelope = root.body || {};\nconst data = envelope.data || {};\nconst message = data.message || {};\nconst key = data.key || {};\n\n// ---------- TEXT (WhatsApp) ----------\nconst conversation = message.conversation || null;\nconst extendedText = message.extendedTextMessage?.text || null;\nconst imageCaption = message.imageMessage?.caption || null;\nconst documentCaption = message.documentMessage?.caption || null;\nlet textContent = conversation || extendedText || imageCaption || documentCaption || null;\nlet hasText = !!textContent;\n\n// ---------- IMAGE / PDF (WhatsApp) ----------\nconst imageMessage =\n  message.imageMessage ||\n  message?.viewOnceMessage?.message?.imageMessage ||\n  message?.ephemeralMessage?.message?.imageMessage ||\n  null;\nlet hasImage = !!imageMessage;\nconst resolvedImageCaption = imageMessage?.caption || '';\n\nconst documentMessage =\n  message.documentMessage ||\n  message?.viewOnceMessage?.message?.documentMessage ||\n  message?.ephemeralMessage?.message?.documentMessage ||\n  null;\nconst mimeType = documentMessage?.mimetype?.toLowerCase() || '';\nconst fileName = documentMessage?.fileName?.toLowerCase() || '';\nlet hasPdf = !!(documentMessage && (mimeType.includes('pdf') || fileName.endsWith('.pdf')));\n\n// ---------- DIRECT UPLOAD (multipart from admin frontend) ----------\nlet directUpload = false;\nlet directBinary = null;\nlet directMime = null;\nlet directFileName = null;\n\nfor (const [propName, b] of Object.entries(binary)) {\n  if (!b || !b.mimeType) continue;\n  const mt = String(b.mimeType).toLowerCase();\n  const fn = String(b.fileName || '').toLowerCase();\n  if (mt.startsWith('image/')) {\n    hasImage = true;\n    directUpload = true;\n    directBinary = b;\n    directMime = mt;\n    directFileName = fn;\n    break;\n  }\n  if (mt === 'application/pdf' || fn.endsWith('.pdf')) {\n    hasPdf = true;\n    directUpload = true;\n    directBinary = b;\n    directMime = mt;\n    directFileName = fn;\n    break;\n  }\n}\n// Extraction du nom de profil WhatsApp et du numéro de l'expéditeur dans le groupe\nconst senderName = data.pushName || envelope.pushName || envelope.data?.pushName || null;\nconst participantJid = key.participant || data.participant || key.remoteJid || '';\nconst rawPhone = participantJid.split('@')[0].replace(/\\D/g, '');\nconst senderPhone = rawPhone ? `0${rawPhone.replace(/^213/, '')}` : null; // format local: 0550...\n\n// Multipart text field from direct upload (admin frontend)\nconst directText = (root && root.body && typeof root.body.text === 'string') ? root.body.text.trim() : '';\nif (directText) {\n  if (!textContent) textContent = directText;\n  hasText = true;\n  directUpload = true;\n}\n\nconst jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);\nconst senderJid = key.remoteJid || envelope.sender || (directUpload ? 'manual_upload' : 'unknown');\n\nconst out = {\n  json: {\n    jobId,\n    senderJid,\n    senderName,   // <--- PLAN B : Nom affiché de la personne (pushName)\n    senderPhone,  // <--- PLAN C : Numéro WhatsApp\n    messageId: key.id || null,\n    remoteJid: key.remoteJid || null,\n    fromMe: key.fromMe || false,\n    instanceName: envelope.instance || null,\n    originalPayload: root,\n    originalBody: envelope,\n    hasText,\n    hasImage,\n    hasPdf,\n    directUpload,\n    directMime,\n    directFileName,\n    text: textContent,\n    imageCaption: resolvedImageCaption,\n    image: hasImage ? imageMessage : null,\n    pdf: hasPdf ? documentMessage : null\n  }\n};\n\nif (directUpload && directBinary) {\n  out.binary = {};\n  if (hasImage) out.binary.image = directBinary;\n  if (hasPdf) out.binary.document = directBinary;\n}\n\nreturn [out];"
+        "jsCode": "const root = $input.first().json;\nconst binary = $input.first().binary || {};\n\nconst envelope = root.body || {};\nconst data = envelope.data || {};\nconst message = data.message || {};\nconst key = data.key || {};\n\n// ---------- TEXT (WhatsApp) ----------\nconst conversation = message.conversation || null;\nconst extendedText = message.extendedTextMessage?.text || null;\nconst imageCaption = message.imageMessage?.caption || null;\nconst documentCaption = message.documentMessage?.caption || null;\nlet textContent = conversation || extendedText || imageCaption || documentCaption || null;\nlet hasText = !!textContent;\n\n// ---------- IMAGE / PDF (WhatsApp) ----------\nconst imageMessage =\n  message.imageMessage ||\n  message?.viewOnceMessage?.message?.imageMessage ||\n  message?.ephemeralMessage?.message?.imageMessage ||\n  null;\nlet hasImage = !!imageMessage;\nconst resolvedImageCaption = imageMessage?.caption || '';\n\nconst documentMessage =\n  message.documentMessage ||\n  message?.viewOnceMessage?.message?.documentMessage ||\n  message?.ephemeralMessage?.message?.documentMessage ||\n  null;\nconst mimeType = documentMessage?.mimetype?.toLowerCase() || '';\nconst fileName = documentMessage?.fileName?.toLowerCase() || '';\nlet hasPdf = !!(documentMessage && (mimeType.includes('pdf') || fileName.endsWith('.pdf')));\n\n// ---------- DIRECT UPLOAD (multipart from admin frontend) ----------\nlet directUpload = false;\nlet directBinary = null;\nlet directMime = null;\nlet directFileName = null;\n\nfor (const [propName, b] of Object.entries(binary)) {\n  if (!b || !b.mimeType) continue;\n  const mt = String(b.mimeType).toLowerCase();\n  const fn = String(b.fileName || '').toLowerCase();\n  if (mt.startsWith('image/')) {\n    hasImage = true;\n    directUpload = true;\n    directBinary = b;\n    directMime = mt;\n    directFileName = fn;\n    break;\n  }\n  if (mt === 'application/pdf' || fn.endsWith('.pdf')) {\n    hasPdf = true;\n    directUpload = true;\n    directBinary = b;\n    directMime = mt;\n    directFileName = fn;\n    break;\n  }\n}\n// Extraction du nom de profil WhatsApp et du numéro de l'expéditeur dans le groupe\nconst senderName = data.pushName || envelope.pushName || envelope.data?.pushName || null;\nconst participantJid = key.participant || data.participant || key.remoteJid || '';\nconst rawPhone = participantJid.split('@')[0].replace(/\\D/g, '');\nconst senderPhone = rawPhone ? `0${rawPhone.replace(/^213/, '')}` : null; // format local: 0550...\n\n// Multipart text field from direct upload (admin frontend)\nconst directText = (root && root.body && typeof root.body.text === 'string') ? root.body.text.trim() : '';\nif (directText) {\n  if (!textContent) textContent = directText;\n  hasText = true;\n  directUpload = true;\n}\n\nconst jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);\nconst senderJid = key.remoteJid || envelope.sender || (directUpload ? 'manual_upload' : 'unknown');\n\n// ---------- HASH UNIQUE SHA-256 (Média + Légende) ----------\nconst crypto = require('crypto');\nlet contentHash = null;\nlet mediaType = 'text';\nconst normCaption = (textContent || resolvedImageCaption || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n\nif (hasImage) {\n  mediaType = 'image';\n  if (directUpload && directBinary?.data) {\n    const buf = Buffer.from(directBinary.data, 'base64');\n    const fsha = crypto.createHash('sha256').update(buf).digest('hex');\n    contentHash = crypto.createHash('sha256').update('img:' + fsha + ':' + normCaption).digest('hex');\n  } else if (imageMessage?.fileSha256) {\n    const raw = imageMessage.fileSha256;\n    const fsha = typeof raw === 'string' ? raw : (Array.isArray(raw?.data) ? Buffer.from(raw.data).toString('base64') : JSON.stringify(raw));\n    contentHash = crypto.createHash('sha256').update('img:' + fsha + ':' + normCaption).digest('hex');\n  } else if (imageMessage?.mediaKey) {\n    contentHash = crypto.createHash('sha256').update('img:' + JSON.stringify(imageMessage.mediaKey) + ':' + normCaption).digest('hex');\n  }\n} else if (hasPdf) {\n  mediaType = 'pdf';\n  if (directUpload && directBinary?.data) {\n    const buf = Buffer.from(directBinary.data, 'base64');\n    const fsha = crypto.createHash('sha256').update(buf).digest('hex');\n    contentHash = crypto.createHash('sha256').update('pdf:' + fsha + ':' + normCaption).digest('hex');\n  } else if (documentMessage?.fileSha256) {\n    const raw = documentMessage.fileSha256;\n    const fsha = typeof raw === 'string' ? raw : (Array.isArray(raw?.data) ? Buffer.from(raw.data).toString('base64') : JSON.stringify(raw));\n    contentHash = crypto.createHash('sha256').update('pdf:' + fsha + ':' + normCaption).digest('hex');\n  }\n} else if (hasText && normCaption.length > 20) {\n  mediaType = 'text';\n  contentHash = crypto.createHash('sha256').update('txt:' + normCaption).digest('hex');\n}\n\nconst out = {\n  json: {\n    jobId,\n    senderJid,\n    senderName,   // <--- PLAN B : Nom affiché de la personne (pushName)\n    senderPhone,  // <--- PLAN C : Numéro WhatsApp\n    messageId: key.id || null,\n    remoteJid: key.remoteJid || null,\n    fromMe: key.fromMe || false,\n    instanceName: envelope.instance || null,\n    originalPayload: root,\n    originalBody: envelope,\n    hasText,\n    hasImage,\n    hasPdf,\n    directUpload,\n    directMime,\n    directFileName,\n    text: textContent,\n    imageCaption: resolvedImageCaption,\n    image: hasImage ? imageMessage : null,\n    pdf: hasPdf ? documentMessage : null,\n    _content_hash: contentHash,\n    _media_type: mediaType\n  }\n};\n\nif (directUpload && directBinary) {\n  out.binary = {};\n  if (hasImage) out.binary.image = directBinary;\n  if (hasPdf) out.binary.document = directBinary;\n}\n\nreturn [out];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -221,7 +237,9 @@
         7856
       ],
       "id": "0e985459-abad-4615-956d-b070021b8ffb",
-      "name": "Detect Content & Generate JobId"
+      "name": "Detect Content & Generate JobId",
+      "notesInFlow": true,
+      "notes": "Détection de Média & Empreinte SHA-256 : Identifie le type de contenu (image, pdf, texte), génère le job_id et calcule le hash combiné (média + légende) pour l'anti-doublon."
     },
     {
       "parameters": {
@@ -285,7 +303,9 @@
         7456
       ],
       "id": "71623836-e27f-4564-9ba8-a815b567a99f",
-      "name": "if texte"
+      "name": "if texte",
+      "notesInFlow": true,
+      "notes": "Routage Branche Texte : Oriente le flux vers l'analyse IA textuelle si l'offre ne contient ni image ni PDF."
     },
     {
       "parameters": {
@@ -319,7 +339,9 @@
         8352
       ],
       "id": "e0d000d9-54f8-473b-a3fc-be23b0959d4e",
-      "name": "if pdf"
+      "name": "if pdf",
+      "notesInFlow": true,
+      "notes": "Routage Branche PDF : Oriente le flux vers le pipeline LlamaParse PDF si un document est détecté."
     },
     {
       "parameters": {
@@ -352,7 +374,9 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 5000,
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "Récupération OCR Image : Interroge l'API LlamaParse pour récupérer le Markdown textuel extrait du flyer."
     },
     {
       "parameters": {
@@ -385,7 +409,9 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 5000,
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "Récupération OCR PDF : Interroge l'API LlamaParse pour récupérer le Markdown textuel extrait de la brochure PDF."
     },
     {
       "parameters": {
@@ -419,7 +445,7 @@
             },
             {
               "name": "premium_mode",
-              "value": "true"
+              "value": "false"
             },
             {
               "name": "language",
@@ -444,7 +470,9 @@
       "maxTries": 2,
       "waitBetweenTries": 5000,
       "continueOnFail": true,
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notesInFlow": true,
+      "notes": "OCR Image LlamaParse : Envoie l'image du flyer à LlamaParse en mode standard (1 crédit/page) pour extraire tableaux et textes."
     },
     {
       "parameters": {
@@ -478,7 +506,7 @@
             },
             {
               "name": "premium_mode",
-              "value": "true"
+              "value": "false"
             },
             {
               "name": "extract_charts",
@@ -522,7 +550,9 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 5000,
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "OCR PDF LlamaParse : Envoie la brochure PDF à LlamaParse en mode standard (1 crédit/page) pour extraction complète."
     },
     {
       "parameters": {
@@ -535,7 +565,9 @@
         7840
       ],
       "id": "a4d7b8a0-d4b0-4f49-a332-8402f048b46a",
-      "name": "Collect & Dynamic Merge"
+      "name": "Collect & Dynamic Merge",
+      "notesInFlow": true,
+      "notes": "Fusion & Normalisation Métier : Réconcilie les données extraites (texte + flyer), applique les règles de traduction (pays, services) et sécurise les formats."
     },
     {
       "parameters": {
@@ -550,7 +582,9 @@
         7824
       ],
       "id": "6cc03dbf-6667-4469-b1a3-149288ebdfd1",
-      "name": "Respond with Merged Result"
+      "name": "Respond with Merged Result",
+      "notesInFlow": true,
+      "notes": "Réponse Synchrone Webhook : Renvoie le résultat final au client si l'appelant attend une réponse synchrone."
     },
     {
       "parameters": {},
@@ -561,7 +595,9 @@
         7456
       ],
       "id": "75274cbe-0ff2-4c52-b0d1-54ff0009a15e",
-      "name": "Merge"
+      "name": "Merge",
+      "notesInFlow": true,
+      "notes": "Synchronisation Flux Image : Combine le résultat JSON de l'extraction avec le binaire de l'image pour le stockage."
     },
     {
       "parameters": {},
@@ -572,7 +608,9 @@
         7840
       ],
       "id": "fa59f438-b3fa-4f33-9394-0818a8167b1e",
-      "name": "Merge 2"
+      "name": "Merge 2",
+      "notesInFlow": true,
+      "notes": "Synchronisation Flux PDF : Combine le résultat JSON de l'extraction avec le binaire du PDF pour le stockage."
     },
     {
       "parameters": {
@@ -607,7 +645,9 @@
       ],
       "id": "35555340-0cec-4524-a31c-6a50f4fb07f4",
       "name": "if image",
-      "alwaysOutputData": false
+      "alwaysOutputData": false,
+      "notesInFlow": true,
+      "notes": "Routage Branche Image : Oriente le flux vers le pipeline LlamaParse Image si une photo/flyer est présente."
     },
     {
       "parameters": {
@@ -620,7 +660,9 @@
         7440
       ],
       "id": "c804a0b1-41ff-4038-86ba-53bc52340306",
-      "name": "Format Text Result"
+      "name": "Format Text Result",
+      "notesInFlow": true,
+      "notes": "Normalisation Schéma Texte : Convertit la réponse IA du texte brut dans le format standardisé de l'application TrackTreck."
     },
     {
       "parameters": {
@@ -633,7 +675,9 @@
         8800
       ],
       "id": "282c9488-494b-4bb0-843e-1ee836468c7a",
-      "name": "Format PDF Result"
+      "name": "Format PDF Result",
+      "notesInFlow": true,
+      "notes": "Normalisation Schéma PDF : Convertit la réponse IA de la brochure PDF dans le format standardisé de l'application TrackTreck."
     },
     {
       "parameters": {
@@ -646,11 +690,13 @@
         8272
       ],
       "id": "e27e1a8f-6470-4af4-934f-a5eb17a1b976",
-      "name": "Format Image Result"
+      "name": "Format Image Result",
+      "notesInFlow": true,
+      "notes": "Normalisation Schéma Image : Convertit la réponse IA du flyer dans le format standardisé de l'application TrackTreck."
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// NŒUD : Detect Noise v4 (Spécialisé : Séjours Organisés & Omra / Hadj)\n// PLACE : Après \"Detect Content & Generate JobId\", AVANT \"IF Valid Offer\"\n//\n// OBJECTIF STRICT :\n//   - Accepter UNIQUEMENT : Séjours organisés (packages) & Omra / Hadj\n//   - Rejeter : RDV Visa, démarches consulaires, billets secs, services divers\n// ============================================================================\n\nconst root = $json;\nconst payload = root.originalPayload || root;\n\n// ============================================================================\n// FAST PATH : Uploads manuels depuis le front admin\n// ============================================================================\nconst _binaryIn = $input.first().binary || {};\nif (root.directUpload === true) {\n  let _cls = 'valid_image_offer';\n  if (root.hasPdf) _cls = 'valid_pdf_offer';\n  else if (!root.hasImage && root.hasText) _cls = 'valid_travel_offer';\n  return [{\n    json: {\n      ...root,\n      classification: _cls,\n      is_valid_offer: true,\n      _debug_reason: 'direct_upload_bypass'\n    },\n    binary: _binaryIn\n  }];\n}\n\n// ----------------------------------------------------------------------------\n// 1. EXTRACTION DU MESSAGE\n// ----------------------------------------------------------------------------\nlet msg =\n  payload.body?.data?.message ||\n  payload.body?.data?.messages?.[0]?.message ||\n  payload.data?.message ||\n  payload.message ||\n  {};\n\nif (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;\nif (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;\nif (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;\nif (msg.documentWithCaptionMessage?.message) {\n  msg = { ...msg, ...msg.documentWithCaptionMessage.message };\n}\n\n// ----------------------------------------------------------------------------\n// 2. DÉTECTION DES MÉDIAS\n// ----------------------------------------------------------------------------\nconst imageMessage = msg.imageMessage || null;\nconst documentMessage = msg.documentMessage || null;\nconst audioMessage = msg.audioMessage || null;\nconst stickerMessage = msg.stickerMessage || null;\nconst videoMessage = msg.videoMessage || null;\n\nconst mime = String(\n  imageMessage?.mimetype ||\n  documentMessage?.mimetype ||\n  payload.body?.data?.mimetype ||\n  payload.mimetype ||\n  payload.mimeType ||\n  ''\n).toLowerCase();\n\nconst fileName = String(\n  documentMessage?.fileName ||\n  documentMessage?.title ||\n  payload.body?.data?.fileName ||\n  payload.body?.data?.title ||\n  payload.fileName ||\n  payload.filename ||\n  payload.title ||\n  ''\n).trim().toLowerCase();\n\nconst isImage = !!imageMessage || mime.startsWith('image/');\nlet isPdf = !!documentMessage || mime === 'application/pdf' || fileName.endsWith('.pdf');\nconst isAudio = !!audioMessage || mime.startsWith('audio/');\nconst isSticker = !!stickerMessage;\nconst isVideo = !!videoMessage || mime.startsWith('video/');\n\n// ----------------------------------------------------------------------------\n// 3. EXTRACTION DU TEXTE\n// ----------------------------------------------------------------------------\nconst raw = String(\n  msg.conversation ||\n  msg.extendedTextMessage?.text ||\n  imageMessage?.caption ||\n  documentMessage?.caption ||\n  fileName ||\n  payload.text ||\n  (typeof payload.message === 'string' ? payload.message : '') ||\n  ''\n).trim();\n\nif (!isPdf && raw.toLowerCase().includes('.pdf')) {\n  isPdf = true;\n}\n\nconst hasText = raw.length > 0;\n\nconst normalized = raw\n  .toLowerCase()\n  .replace(/\\n/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .replace(/[^\\p{L}\\p{N}\\s€$.,:/+\\-]/gu, ' ')\n  .trim();\n\n// ----------------------------------------------------------------------------\n// 4. AUDIO / STICKER / VIDÉO → REJET\n// ----------------------------------------------------------------------------\nif (isAudio || isSticker || isVideo) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise_unsupported_media',\n      is_valid_offer: false,\n      _debug_reason: isAudio ? 'audio_message' : isSticker ? 'sticker_message' : 'video_message'\n    }\n  }];\n}\n\n// ============================================================================\n// 5. CATÉGORIES DE BRUIT — DÉTECTION STRICTE\n// ============================================================================\n\n// ----------------------------------------------------------------------------\n// 5.A VISA / RDV CONSULAIRES (REJET PRIORITAIRE)\n// ----------------------------------------------------------------------------\n// Détection des centres et prestataires de visa\nconst visaCenters = /\\b(bls|tls|tlscontact|vfs|vfs\\s*global|capago)\\b/i;\n\n// Expressions spécifiques aux RDV de visa\nconst visaRdvPatterns = [\n  /\\brdv\\s+visa\\b/i,\n  /\\brendez[\\s-]?vous\\s+visa\\b/i,\n  /\\bdemande\\s+de\\s+visa\\b/i,\n  /\\bdossier\\s+visa\\b/i,\n  /\\bproc[eé]dure\\s+visa\\b/i,\n  /\\bprise\\s+de\\s+rdv\\b/i,\n  /\\bprise\\s+de\\s+rendez[\\s-]?vous\\b/i,\n  /\\bdisponible\\s+rdv\\b/i,\n  /\\brdv\\s+disponible\\b/i,\n  /\\brendez[\\s-]?vous\\s+disponible\\b/i,\n  /\\brdv\\s+(espagne|france|italie|allemagne|portugal|belgique|schengen)\\b/i,\n  /\\brendez[\\s-]?vous\\s+(espagne|france|italie|allemagne|portugal|belgique|schengen)\\b/i,\n  /\\bregroupement\\s+familial\\b/i,\n  /\\brdv\\s+[\\w\\s]{0,20}(a|à)\\s+domicile\\b/i\n];\n\nconst hasVisaRdvPattern = visaRdvPatterns.some(rx => rx.test(normalized));\nconst hasVisaCenter = visaCenters.test(normalized);\n\n// Si le nom du fichier PDF contient un indicateur de visa\nconst isVisaFileName = /(visa|bls|tls|vfs|rendezvous|rdv)/i.test(fileName);\n\nconst isVisaOffer = hasVisaRdvPattern || hasVisaCenter || isVisaFileName;\n\n// ----------------------------------------------------------------------------\n// 5.B DEMANDES / RECHERCHES B2B (REJET)\n// ----------------------------------------------------------------------------\nconst requestPatterns = [\n  /\\bon\\s+cherche\\b/i,\n  /\\bont\\s+cherche\\b/i,\n  /\\bje\\s+cherche\\b/i,\n  /\\bnous\\s+cherchons\\b/i,\n  /\\bcherche\\s+(d[eé]part|vol|billet|h[oô]tel|s[eé]jour|programme|partenaire)/i,\n  /\\bje\\s+veux\\b/i,\n  /\\bje\\s+voudrais\\b/i,\n  /\\bj'?ai\\s+besoin\\b/i,\n  /\\bbesoin\\s+(de|d'|d\\s)/i,\n  /\\bqui\\s+a\\b/i,\n  /\\bsvp\\b/i,\n  /\\bs'?il\\s+vous\\s+pla[iî]t\\b/i\n];\n\nconst isRequest = requestPatterns.some(rx => rx.test(normalized));\n\n// ----------------------------------------------------------------------------\n// 5.C BILLET SEC / TRANSPORT SEUL (REJET)\n// ----------------------------------------------------------------------------\nconst flightOnlyKeywords = [\n  /\\bbillet\\s+d['e]?\\s*avion\\b/i,\n  /\\bbillets?\\s+disponibles?\\b/i,\n  /\\bvente\\s+billet\\b/i,\n  /\\bbillet\\s+sec\\b/i,\n  /\\bvol\\s+sec\\b/i\n];\n\nconst hasFlightOnlyKeyword = flightOnlyKeywords.some(rx => rx.test(normalized));\n\n// Mots-clés indiquant la présence d'un séjour / hébergement\nconst stayKeywords = [\n  'hotel', 'hôtel', 'hôtels', 'hotels', 'hébergement', 'hebergement',\n  'séjour', 'sejour', 'séjours', 'sejours', 'resort',\n  'pension', 'demi-pension', 'all inclusive', 'all-inclusive', 'pension complète',\n  'circuit', 'package', 'forfait', 'nuits', 'nuitées', 'nuitees',\n  'chambre', 'chambres', 'programme', 'itinéraire', 'itineraire',\n  'excursion', 'excursions'\n];\nconst hasStayKeyword = stayKeywords.some(k => normalized.includes(k));\n\n// Routes de vol seules (ex: ALG-IST-ALG) sans hébergement\nconst routePattern = /\\b[a-z]{2,4}\\s*[-–]\\s*[a-z]{2,4}(\\s*[-–]\\s*[a-z]{2,4})?\\b/i;\nconst isFlightOnly = (hasFlightOnlyKeyword || routePattern.test(normalized)) && !hasStayKeyword;\n\n// Bus sec\nconst busOnlyPatterns = [/\\bpar\\s+bus\\b/i, /\\ben\\s+bus\\b/i, /\\bd[eé]part\\s+bus\\b/i];\nconst isBusOnly = busOnlyPatterns.some(rx => rx.test(normalized)) && !hasStayKeyword;\n\n// Salutations pures / messages courts\nconst noiseOnlyPhrases = [\n  /^(bonjour|bonsoir|salut|coucou|hello|hi|hey|salem|salam)[\\s!?.]*$/i,\n  /^(ça va|ca va|ca va\\?|ça va\\?|cv|cv\\?)[\\s!?.]*$/i,\n  /^(merci|merci beaucoup|ok|d'accord|daccord|oui|non|inchallah|inshallah)[\\s!?.]*$/i,\n  /^(appelle?[ -]?moi|rappel(le|er) moi|tu peux m'appeler)[\\s!?.]*$/i\n];\nconst isNoisePureGreeting = noiseOnlyPhrases.some(rx => rx.test(raw));\nconst isTrivialShort = raw.length > 0 && raw.length < 5 && !/\\d/.test(raw);\n\n// ============================================================================\n// 6. DÉTECTION QUALIFIÉE : OMRA / HADJ ou SÉJOUR ORGANISÉ\n// ============================================================================\n\n// --- 6.A Univers OMRA / HADJ ---\nconst omraHadjKeywords = [\n  'omra', 'umrah', 'omrah', 'hadj', 'hajj', 'hadji',\n  'makkah', 'mecque', 'madinah', 'medine', 'médine',\n  'rawda', 'haram', 'kaaba', 'saoudite', 'saudi'\n];\nconst isOmraHadj = omraHadjKeywords.some(k => normalized.includes(k));\n\n// --- 6.B Univers SÉJOUR VOYAGE ORGANISÉ ---\n// Exige à la fois une notion d'hébergement ET une notion de formule/séjour\nconst hasAccommodation = /(hotel|hôtel|resort|chambre|pension|hebergement|hébergement)/i.test(normalized);\nconst hasTripStructure = /(nuit|nuits|jour|jours|sejour|séjour|circuit|programme|excursion|visite|inclus)/i.test(normalized);\nconst isOrganizedTrip = hasAccommodation && hasTripStructure;\n\n// Prix et dates\nconst hasPrice = /(\\d{2,6}\\s?(da|dzd|eur|€|\\$))/i.test(normalized);\nconst hasDate = /\\b(\\d{1,2}[\\/\\-]\\d{1,2}([\\/\\-]\\d{2,4})?)\\b/i.test(normalized);\n\n// ============================================================================\n// 7. APPLICATION DES RÈGLES\n// ============================================================================\n\n// -- 7.1 VISA / RDV → REJET IMMÉDIAT --\nif (isVisaOffer) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'excluded_visa_offer',\n      is_valid_offer: false,\n      _debug_reason: 'visa_appointment_or_service_detected',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.2 DEMANDE / RECHERCHE → REJET --\nif (isRequest) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'excluded_request_offer',\n      is_valid_offer: false,\n      _debug_reason: 'b2b_request_or_search',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.3 BILLETS SECS / BUS SEC → REJET --\nif (isFlightOnly || isBusOnly) {\n  return [{\n    json: {\n      ...$json,\n      classification: isFlightOnly ? 'excluded_flight_only' : 'excluded_bus_only',\n      is_valid_offer: false,\n      _debug_reason: 'transport_only_no_stay',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.4 BRUIT PUR / SALUTATIONS → REJET --\nif (isNoisePureGreeting || isTrivialShort) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise',\n      is_valid_offer: false,\n      _debug_reason: isNoisePureGreeting ? 'pure_greeting' : 'trivial_short',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.5 IMAGE OU PDF SEUL (SANS TEXTE) --\n// On autorise l'envoi à l'OCR / Gemini pour extraction, mais en signalant le besoin de filtre\nif ((isImage || isPdf) && !hasText) {\n  return [{\n    json: {\n      ...$json,\n      classification: isImage ? 'valid_image_offer' : 'valid_pdf_offer',\n      is_valid_offer: true,\n      _debug_reason: isImage ? 'image_only_forward_to_ocr' : 'pdf_only_forward_to_ocr'\n    }\n  }];\n}\n\n// -- 7.6 IMAGE OU PDF AVEC TEXTE / CAPTION --\nif ((isImage || isPdf) && hasText) {\n  // Si la légende est du pur bruit\n  const wordCount = normalized.split(/\\s+/).filter(w => w.length > 0).length;\n  if (wordCount <= 4 && (isNoisePureGreeting || isTrivialShort)) {\n    return [{\n      json: {\n        ...$json,\n        classification: 'noise_caption_with_media',\n        is_valid_offer: false,\n        _debug_reason: 'caption_is_pure_noise'\n      }\n    }];\n  }\n\n  // Si la légende confirme Omra/Hadj ou Voyage Organisé, ou si c'est un média avec texte descriptif\n  return [{\n    json: {\n      ...$json,\n      classification: isImage ? 'valid_image_offer' : 'valid_pdf_offer',\n      is_valid_offer: true,\n      _target_category: isOmraHadj ? 'omra_hadj' : (isOrganizedTrip ? 'organized_trip' : 'media_check'),\n      _debug_reason: 'media_with_valid_caption'\n    }\n  }];\n}\n\n// -- 7.7 TEXTE SEUL : FILTRE STRICT SÉJOUR ORGANISÉ OU OMRA / HADJ --\nif (!isImage && !isPdf && hasText) {\n  // RÈGLE D'OR : Pour du texte seul, il FAUT soit être une Omra/Hadj, soit un Séjour Organisé\n  const isValidTarget = (isOmraHadj || isOrganizedTrip) && (hasPrice || hasDate || normalized.length >= 40);\n\n  if (isValidTarget) {\n    return [{\n      json: {\n        ...$json,\n        classification: 'valid_travel_offer',\n        is_valid_offer: true,\n        category: isOmraHadj ? 'omra_hadj' : 'organized_trip',\n        _debug_reason: isOmraHadj ? 'target_omra_hadj_text' : 'target_organized_trip_text',\n        _debug_raw: raw\n      }\n    }];\n  }\n\n  // Si le texte ne correspond ni à Omra/Hadj ni à un séjour organisé : REJET\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise_unrelated_text',\n      is_valid_offer: false,\n      _debug_reason: 'not_organized_trip_nor_omra_hadj',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// Cas par défaut : REJET\nreturn [{\n  json: {\n    ...$json,\n    classification: 'noise',\n    is_valid_offer: false,\n    _debug_reason: 'unclassified_dropped',\n    _debug_raw: raw\n  }\n}];\n"
+        "jsCode": "// ============================================================================\n// NŒUD : Detect Noise v4 (Spécialisé : Séjours Organisés & Omra / Hadj)\n// PLACE : Après \"Detect Content & Generate JobId\", AVANT \"IF Valid Offer\"\n// ============================================================================\n\nconst root = $json;\nconst payload = root.originalPayload || root;\nconst _binaryIn = $input.first().binary || {};\n\n// ============================================================================\n// 1. VÉRIFICATION ANTI-DOUBLON PERSISTANTE (Supabase / PostgreSQL)\n// ============================================================================\nconst _contentHash = root._content_hash;\nconst forceUpload = !!(root.body?.force_upload || root.originalBody?.force_upload || root.force_upload);\n\nif (_contentHash && !forceUpload) {\n  try {\n    const sKey = (typeof $env !== 'undefined' ? $env.SUPABASE_SERVICE_ROLE_KEY : null) || (typeof process !== 'undefined' ? process.env?.SUPABASE_SERVICE_ROLE_KEY : '') || '';\n    const http = require('http');\n    \n    const existing = await new Promise((resolve) => {\n      const options = {\n        hostname: 'supabase-kong',\n        port: 8000,\n        path: `/rest/v1/ingestion_hashes?content_hash=eq.${_contentHash}&select=id,tour_id`,\n        method: 'GET',\n        headers: {\n          'apikey': sKey,\n          'Authorization': `Bearer ${sKey}`\n        },\n        timeout: 3000\n      };\n      const req = http.request(options, (res) => {\n        let data = '';\n        res.on('data', (chunk) => { data += chunk; });\n        res.on('end', () => {\n          try {\n            if (res.statusCode >= 200 && res.statusCode < 300) {\n              const json = JSON.parse(data);\n              resolve(Array.isArray(json) && json.length > 0 ? json : null);\n            } else {\n              resolve(null);\n            }\n          } catch (e) {\n            resolve(null);\n          }\n        });\n      });\n      req.on('error', () => resolve(null));\n      req.on('timeout', () => { req.destroy(); resolve(null); });\n      req.end();\n    });\n\n    if (existing && existing.length > 0) {\n      return [{\n        json: {\n          ...root,\n          classification: 'duplicate_already_ingested',\n          is_valid_offer: false,\n          _debug_reason: `duplicate_hash_found_tour_${existing[0].tour_id}`,\n          _existing_tour_id: existing[0].tour_id\n        }\n      }];\n    }\n  } catch (err) {\n    // Si échec inattendu, on n'interrompt pas le flux\n  }\n}\n\n// ============================================================================\n// 2. FAST PATH : Uploads manuels depuis le front admin (si non-doublon)\n// ============================================================================\nif (root.directUpload === true) {\n  let _cls = 'valid_image_offer';\n  if (root.hasPdf) _cls = 'valid_pdf_offer';\n  else if (!root.hasImage && root.hasText) _cls = 'valid_travel_offer';\n  return [{\n    json: {\n      ...root,\n      classification: _cls,\n      is_valid_offer: true,\n      _debug_reason: 'direct_upload_bypass'\n    },\n    binary: _binaryIn\n  }];\n}\n\n// 1. EXTRACTION DU MESSAGE\n// ----------------------------------------------------------------------------\nlet msg =\n  payload.body?.data?.message ||\n  payload.body?.data?.messages?.[0]?.message ||\n  payload.data?.message ||\n  payload.message ||\n  {};\n\nif (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;\nif (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;\nif (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;\nif (msg.documentWithCaptionMessage?.message) {\n  msg = { ...msg, ...msg.documentWithCaptionMessage.message };\n}\n\n// ----------------------------------------------------------------------------\n// 2. DÉTECTION DES MÉDIAS\n// ----------------------------------------------------------------------------\nconst imageMessage = msg.imageMessage || null;\nconst documentMessage = msg.documentMessage || null;\nconst audioMessage = msg.audioMessage || null;\nconst stickerMessage = msg.stickerMessage || null;\nconst videoMessage = msg.videoMessage || null;\n\nconst mime = String(\n  imageMessage?.mimetype ||\n  documentMessage?.mimetype ||\n  payload.body?.data?.mimetype ||\n  payload.mimetype ||\n  payload.mimeType ||\n  ''\n).toLowerCase();\n\nconst fileName = String(\n  documentMessage?.fileName ||\n  documentMessage?.title ||\n  payload.body?.data?.fileName ||\n  payload.body?.data?.title ||\n  payload.fileName ||\n  payload.filename ||\n  payload.title ||\n  ''\n).trim().toLowerCase();\n\nconst isImage = !!imageMessage || mime.startsWith('image/');\nlet isPdf = !!documentMessage || mime === 'application/pdf' || fileName.endsWith('.pdf');\nconst isAudio = !!audioMessage || mime.startsWith('audio/');\nconst isSticker = !!stickerMessage;\nconst isVideo = !!videoMessage || mime.startsWith('video/');\n\n// ----------------------------------------------------------------------------\n// 3. EXTRACTION DU TEXTE\n// ----------------------------------------------------------------------------\nconst raw = String(\n  msg.conversation ||\n  msg.extendedTextMessage?.text ||\n  imageMessage?.caption ||\n  documentMessage?.caption ||\n  fileName ||\n  payload.text ||\n  (typeof payload.message === 'string' ? payload.message : '') ||\n  ''\n).trim();\n\nif (!isPdf && raw.toLowerCase().includes('.pdf')) {\n  isPdf = true;\n}\n\nconst hasText = raw.length > 0;\n\nconst normalized = raw\n  .toLowerCase()\n  .replace(/\\n/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .replace(/[^\\p{L}\\p{N}\\s€$.,:/+\\-]/gu, ' ')\n  .trim();\n\n// ----------------------------------------------------------------------------\n// 4. AUDIO / STICKER / VIDÉO → REJET\n// ----------------------------------------------------------------------------\nif (isAudio || isSticker || isVideo) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise_unsupported_media',\n      is_valid_offer: false,\n      _debug_reason: isAudio ? 'audio_message' : isSticker ? 'sticker_message' : 'video_message'\n    }\n  }];\n}\n\n// ============================================================================\n// 5. CATÉGORIES DE BRUIT — DÉTECTION STRICTE\n// ============================================================================\n\n// ----------------------------------------------------------------------------\n// 5.A VISA / RDV CONSULAIRES (REJET PRIORITAIRE)\n// ----------------------------------------------------------------------------\n// Détection des centres et prestataires de visa\nconst visaCenters = /\\b(bls|tls|tlscontact|vfs|vfs\\s*global|capago)\\b/i;\n\n// Expressions spécifiques aux RDV de visa\nconst visaRdvPatterns = [\n  /\\brdv\\s+visa\\b/i,\n  /\\brendez[\\s-]?vous\\s+visa\\b/i,\n  /\\bdemande\\s+de\\s+visa\\b/i,\n  /\\bdossier\\s+visa\\b/i,\n  /\\bproc[eé]dure\\s+visa\\b/i,\n  /\\bprise\\s+de\\s+rdv\\b/i,\n  /\\bprise\\s+de\\s+rendez[\\s-]?vous\\b/i,\n  /\\bdisponible\\s+rdv\\b/i,\n  /\\brdv\\s+disponible\\b/i,\n  /\\brendez[\\s-]?vous\\s+disponible\\b/i,\n  /\\brdv\\s+(espagne|france|italie|allemagne|portugal|belgique|schengen)\\b/i,\n  /\\brendez[\\s-]?vous\\s+(espagne|france|italie|allemagne|portugal|belgique|schengen)\\b/i,\n  /\\bregroupement\\s+familial\\b/i,\n  /\\brdv\\s+[\\w\\s]{0,20}(a|à)\\s+domicile\\b/i\n];\n\nconst hasVisaRdvPattern = visaRdvPatterns.some(rx => rx.test(normalized));\nconst hasVisaCenter = visaCenters.test(normalized);\n\n// Si le nom du fichier PDF contient un indicateur de visa\nconst isVisaFileName = /(visa|bls|tls|vfs|rendezvous|rdv)/i.test(fileName);\n\nconst isVisaOffer = hasVisaRdvPattern || hasVisaCenter || isVisaFileName;\n\n// ----------------------------------------------------------------------------\n// 5.B DEMANDES / RECHERCHES B2B (REJET)\n// ----------------------------------------------------------------------------\nconst requestPatterns = [\n  /\\bon\\s+cherche\\b/i,\n  /\\bont\\s+cherche\\b/i,\n  /\\bje\\s+cherche\\b/i,\n  /\\bnous\\s+cherchons\\b/i,\n  /\\bcherche\\s+(d[eé]part|vol|billet|h[oô]tel|s[eé]jour|programme|partenaire)/i,\n  /\\bje\\s+veux\\b/i,\n  /\\bje\\s+voudrais\\b/i,\n  /\\bj'?ai\\s+besoin\\b/i,\n  /\\bbesoin\\s+(de|d'|d\\s)/i,\n  /\\bqui\\s+a\\b/i,\n  /\\bsvp\\b/i,\n  /\\bs'?il\\s+vous\\s+pla[iî]t\\b/i\n];\n\nconst isRequest = requestPatterns.some(rx => rx.test(normalized));\n\n// ----------------------------------------------------------------------------\n// 5.C BILLET SEC / TRANSPORT SEUL (REJET)\n// ----------------------------------------------------------------------------\nconst flightOnlyKeywords = [\n  /\\bbillet\\s+d['e]?\\s*avion\\b/i,\n  /\\bbillets?\\s+disponibles?\\b/i,\n  /\\bvente\\s+billet\\b/i,\n  /\\bbillet\\s+sec\\b/i,\n  /\\bvol\\s+sec\\b/i\n];\n\nconst hasFlightOnlyKeyword = flightOnlyKeywords.some(rx => rx.test(normalized));\n\n// Mots-clés indiquant la présence d'un séjour / hébergement\nconst stayKeywords = [\n  'hotel', 'hôtel', 'hôtels', 'hotels', 'hébergement', 'hebergement',\n  'séjour', 'sejour', 'séjours', 'sejours', 'resort',\n  'pension', 'demi-pension', 'all inclusive', 'all-inclusive', 'pension complète',\n  'circuit', 'package', 'forfait', 'nuits', 'nuitées', 'nuitees',\n  'chambre', 'chambres', 'programme', 'itinéraire', 'itineraire',\n  'excursion', 'excursions'\n];\nconst hasStayKeyword = stayKeywords.some(k => normalized.includes(k));\n\n// Routes de vol seules (ex: ALG-IST-ALG) sans hébergement\nconst routePattern = /\\b[a-z]{2,4}\\s*[-–]\\s*[a-z]{2,4}(\\s*[-–]\\s*[a-z]{2,4})?\\b/i;\nconst isFlightOnly = (hasFlightOnlyKeyword || routePattern.test(normalized)) && !hasStayKeyword;\n\n// Bus sec\nconst busOnlyPatterns = [/\\bpar\\s+bus\\b/i, /\\ben\\s+bus\\b/i, /\\bd[eé]part\\s+bus\\b/i];\nconst isBusOnly = busOnlyPatterns.some(rx => rx.test(normalized)) && !hasStayKeyword;\n\n// Salutations pures / messages courts\nconst noiseOnlyPhrases = [\n  /^(bonjour|bonsoir|salut|coucou|hello|hi|hey|salem|salam)[\\s!?.]*$/i,\n  /^(ça va|ca va|ca va\\?|ça va\\?|cv|cv\\?)[\\s!?.]*$/i,\n  /^(merci|merci beaucoup|ok|d'accord|daccord|oui|non|inchallah|inshallah)[\\s!?.]*$/i,\n  /^(appelle?[ -]?moi|rappel(le|er) moi|tu peux m'appeler)[\\s!?.]*$/i\n];\nconst isNoisePureGreeting = noiseOnlyPhrases.some(rx => rx.test(raw));\nconst isTrivialShort = raw.length > 0 && raw.length < 5 && !/\\d/.test(raw);\n\n// ============================================================================\n// 6. DÉTECTION QUALIFIÉE : OMRA / HADJ ou SÉJOUR ORGANISÉ\n// ============================================================================\n\n// --- 6.A Univers OMRA / HADJ ---\nconst omraHadjKeywords = [\n  'omra', 'umrah', 'omrah', 'hadj', 'hajj', 'hadji',\n  'makkah', 'mecque', 'madinah', 'medine', 'médine',\n  'rawda', 'haram', 'kaaba', 'saoudite', 'saudi'\n];\nconst isOmraHadj = omraHadjKeywords.some(k => normalized.includes(k));\n\n// --- 6.B Univers SÉJOUR VOYAGE ORGANISÉ ---\n// Exige à la fois une notion d'hébergement ET une notion de formule/séjour\nconst hasAccommodation = /(hotel|hôtel|resort|chambre|pension|hebergement|hébergement)/i.test(normalized);\nconst hasTripStructure = /(nuit|nuits|jour|jours|sejour|séjour|circuit|programme|excursion|visite|inclus)/i.test(normalized);\nconst isOrganizedTrip = hasAccommodation && hasTripStructure;\n\n// Prix et dates\nconst hasPrice = /(\\d{2,6}\\s?(da|dzd|eur|€|\\$))/i.test(normalized);\nconst hasDate = /\\b(\\d{1,2}[\\/\\-]\\d{1,2}([\\/\\-]\\d{2,4})?)\\b/i.test(normalized);\n\n// ============================================================================\n// 7. APPLICATION DES RÈGLES\n// ============================================================================\n\n// -- 7.1 VISA / RDV → REJET IMMÉDIAT --\nif (isVisaOffer) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'excluded_visa_offer',\n      is_valid_offer: false,\n      _debug_reason: 'visa_appointment_or_service_detected',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.2 DEMANDE / RECHERCHE → REJET --\nif (isRequest) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'excluded_request_offer',\n      is_valid_offer: false,\n      _debug_reason: 'b2b_request_or_search',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.3 BILLETS SECS / BUS SEC → REJET --\nif (isFlightOnly || isBusOnly) {\n  return [{\n    json: {\n      ...$json,\n      classification: isFlightOnly ? 'excluded_flight_only' : 'excluded_bus_only',\n      is_valid_offer: false,\n      _debug_reason: 'transport_only_no_stay',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.4 BRUIT PUR / SALUTATIONS → REJET --\nif (isNoisePureGreeting || isTrivialShort) {\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise',\n      is_valid_offer: false,\n      _debug_reason: isNoisePureGreeting ? 'pure_greeting' : 'trivial_short',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// -- 7.5 IMAGE OU PDF SEUL (SANS TEXTE) --\n// On autorise l'envoi à l'OCR / Gemini pour extraction, mais en signalant le besoin de filtre\nif ((isImage || isPdf) && !hasText) {\n  return [{\n    json: {\n      ...$json,\n      classification: isImage ? 'valid_image_offer' : 'valid_pdf_offer',\n      is_valid_offer: true,\n      _debug_reason: isImage ? 'image_only_forward_to_ocr' : 'pdf_only_forward_to_ocr'\n    }\n  }];\n}\n\n// -- 7.6 IMAGE OU PDF AVEC TEXTE / CAPTION --\nif ((isImage || isPdf) && hasText) {\n  // Si la légende est du pur bruit\n  const wordCount = normalized.split(/\\s+/).filter(w => w.length > 0).length;\n  if (wordCount <= 4 && (isNoisePureGreeting || isTrivialShort)) {\n    return [{\n      json: {\n        ...$json,\n        classification: 'noise_caption_with_media',\n        is_valid_offer: false,\n        _debug_reason: 'caption_is_pure_noise'\n      }\n    }];\n  }\n\n  // Si la légende confirme Omra/Hadj ou Voyage Organisé, ou si c'est un média avec texte descriptif\n  return [{\n    json: {\n      ...$json,\n      classification: isImage ? 'valid_image_offer' : 'valid_pdf_offer',\n      is_valid_offer: true,\n      _target_category: isOmraHadj ? 'omra_hadj' : (isOrganizedTrip ? 'organized_trip' : 'media_check'),\n      _debug_reason: 'media_with_valid_caption'\n    }\n  }];\n}\n\n// -- 7.7 TEXTE SEUL : FILTRE STRICT SÉJOUR ORGANISÉ OU OMRA / HADJ --\nif (!isImage && !isPdf && hasText) {\n  // RÈGLE D'OR : Pour du texte seul, il FAUT soit être une Omra/Hadj, soit un Séjour Organisé\n  const isValidTarget = (isOmraHadj || isOrganizedTrip) && (hasPrice || hasDate || normalized.length >= 40);\n\n  if (isValidTarget) {\n    return [{\n      json: {\n        ...$json,\n        classification: 'valid_travel_offer',\n        is_valid_offer: true,\n        category: isOmraHadj ? 'omra_hadj' : 'organized_trip',\n        _debug_reason: isOmraHadj ? 'target_omra_hadj_text' : 'target_organized_trip_text',\n        _debug_raw: raw\n      }\n    }];\n  }\n\n  // Si le texte ne correspond ni à Omra/Hadj ni à un séjour organisé : REJET\n  return [{\n    json: {\n      ...$json,\n      classification: 'noise_unrelated_text',\n      is_valid_offer: false,\n      _debug_reason: 'not_organized_trip_nor_omra_hadj',\n      _debug_raw: raw\n    }\n  }];\n}\n\n// Cas par défaut : REJET\nreturn [{\n  json: {\n    ...$json,\n    classification: 'noise',\n    is_valid_offer: false,\n    _debug_reason: 'unclassified_dropped',\n    _debug_raw: raw\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -659,7 +705,9 @@
         7856
       ],
       "id": "980bbe9d-2e0c-41c7-90ce-549db324276b",
-      "name": "Detect Noise"
+      "name": "Detect Noise",
+      "notesInFlow": true,
+      "notes": "Filtre Anti-Bruit & Anti-Doublon : Élimine les messages hors-sujet (visas, demandes, vols secs) et bloque les doublons persistants via la table Supabase ingestion_hashes."
     },
     {
       "parameters": {
@@ -693,12 +741,14 @@
         7856
       ],
       "id": "e5cb3c2e-48eb-46a3-b9e7-5e8bcf2a8a33",
-      "name": "IF Valid Offer"
+      "name": "IF Valid Offer",
+      "notesInFlow": true,
+      "notes": "Garde-Fou Offre Valide : Bloque net le traitement si le message est classifié comme bruit ou doublon (0 crédit gaspillé)."
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH payload AS (\n  SELECT '{{ JSON.stringify($json).replace(/'/g, \"''\") }}'::jsonb AS data\n),\n\nnormalized AS (\n  SELECT\n    COALESCE((data->>'agency_id')::bigint, 1) AS agency_id,\n    COALESCE(NULLIF(data->>'title', ''), 'Offre sans titre') AS title,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'countries', '[]'::jsonb))\n    ) AS countries,\n\n    COALESCE((data->>'duration_nights')::integer, 0) AS duration_nights,\n    NULLIF(data->>'airline', '') AS airline,\n    NULLIF(data->>'description', '') AS description,\n    COALESCE(data->'itinerary', '[]'::jsonb) AS itinerary,\n\n    COALESCE((data->>'is_global_pricing')::boolean, false) AS is_global_pricing,\n\n    CASE\n      WHEN data ? 'global_pricing'\n           AND data->'global_pricing' <> 'null'::jsonb\n      THEN data->'global_pricing'\n      ELSE NULL\n    END AS global_pricing,\n\n    COALESCE((data->>'lead_price')::numeric, 0) AS lead_price,\n\n    COALESCE(\n      data->'services',\n      '{\"included\": [], \"excluded\": []}'::jsonb\n    ) AS services,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'photo_urls', '[]'::jsonb))\n    ) AS photo_urls\n  FROM payload\n),\n\nensure_agency AS (\n  INSERT INTO public.agencies (\n    id,\n    name,\n    email,\n    phone\n  )\n  OVERRIDING SYSTEM VALUE\n  SELECT\n    agency_id,\n    'Default Agency',\n    'default@agency.local',\n    '0000000000'\n  FROM normalized\n  ON CONFLICT (id) DO NOTHING\n),\n\ninserted_tour AS (\n  INSERT INTO public.tours (\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    needs_review\n  )\n  SELECT\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    'draft'::public.offer_status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    true\n  FROM normalized\n  RETURNING id, title, status, needs_review\n),\n\ninserted_steps AS (\n  INSERT INTO public.tour_steps (\n    tour_id,\n    city,\n    step_order,\n    duration_nights\n  )\n  SELECT\n    tour.id,\n    COALESCE(NULLIF(step->>'city', ''), 'Unknown'),\n    COALESCE((step->>'step_order')::integer, ord::integer),\n    COALESCE((step->>'duration_nights')::integer, 1)\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n  RETURNING id, tour_id, step_order\n),\n\ninserted_hotel_options AS (\n  INSERT INTO public.hotel_options (\n    tour_step_id,\n    hotel_id,\n    custom_hotel_name,\n    is_default,\n    pricing\n  )\n  SELECT\n    inserted_steps.id,\n\n    CASE\n      WHEN hotel->>'hotel_id' IS NULL\n           OR hotel->>'hotel_id' = ''\n           OR hotel->>'hotel_id' = 'null'\n      THEN NULL\n      ELSE (hotel->>'hotel_id')::bigint\n    END AS hotel_id,\n\n    NULLIF(hotel->>'custom_hotel_name', '') AS custom_hotel_name,\n\n    COALESCE((hotel->>'is_default')::boolean, false) AS is_default,\n\n    COALESCE(hotel->'pricing', '{}'::jsonb) AS pricing\n\n  FROM payload p\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n\n  JOIN inserted_steps\n    ON inserted_steps.step_order = COALESCE((step->>'step_order')::integer, ord::integer)\n\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(step->'hotels', '[]'::jsonb)\n  ) AS hotels(hotel)\n\n  RETURNING id\n),\n\ninserted_departures AS (\n  INSERT INTO public.departures (\n    tour_id,\n    departure_city,\n    stock,\n    flight_departure_time,\n    flight_arrival_time,\n    return_flight_departure_time,\n    return_flight_arrival_time\n  )\n  SELECT\n    tour.id,\n\n    COALESCE(NULLIF(departure->>'departure_city', ''), 'Alger') AS departure_city,\n\n    COALESCE((departure->>'stock')::integer, 0) AS stock,\n\n    (departure->>'flight_departure_time')::timestamptz AS flight_departure_time,\n\n    -- Outbound arrival: keep the real flight-plan value when present, otherwise\n    -- fall back to outbound departure + 1 hour (NOT NULL guard).\n    COALESCE(\n      CASE WHEN departure->>'flight_arrival_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'flight_arrival_time')::timestamptz ELSE NULL END,\n      (departure->>'flight_departure_time')::timestamptz + INTERVAL '1 hour'\n    ) AS flight_arrival_time,\n\n    COALESCE(\n      CASE WHEN departure->>'return_flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_departure_time')::timestamptz ELSE NULL END,\n      (departure->>'flight_departure_time')::timestamptz\n    ) AS return_flight_departure_time,\n\n    -- Return arrival: keep the real flight-plan value when present, otherwise\n    -- fall back to return departure + 1 hour (NOT NULL guard).\n    COALESCE(\n      CASE WHEN departure->>'return_flight_arrival_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_arrival_time')::timestamptz ELSE NULL END,\n      COALESCE(\n        CASE WHEN departure->>'return_flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_departure_time')::timestamptz ELSE NULL END,\n        (departure->>'flight_departure_time')::timestamptz\n      ) + INTERVAL '1 hour'\n    ) AS return_flight_arrival_time\n\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'departures', '[]'::jsonb)\n  ) AS departures(departure)\n\n  WHERE departure->>'flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'\n\n  RETURNING id\n)\n\nSELECT\n  tour.id AS tour_id,\n  tour.title,\n  tour.status,\n  tour.needs_review,\n  (SELECT count(*) FROM inserted_steps) AS inserted_steps_count,\n  (SELECT count(*) FROM inserted_hotel_options) AS inserted_hotel_options_count,\n  (SELECT count(*) FROM inserted_departures) AS inserted_departures_count\nFROM inserted_tour tour;",
+        "query": "WITH payload AS (\n  SELECT '{{ JSON.stringify($json).replace(/'/g, \"''\") }}'::jsonb AS data\n),\n\nnormalized AS (\n  SELECT\n    COALESCE((data->>'agency_id')::bigint, 1) AS agency_id,\n    COALESCE(NULLIF(data->>'title', ''), 'Offre sans titre') AS title,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'countries', '[]'::jsonb))\n    ) AS countries,\n\n    COALESCE((data->>'duration_nights')::integer, 0) AS duration_nights,\n    NULLIF(data->>'airline', '') AS airline,\n    NULLIF(data->>'description', '') AS description,\n    COALESCE(data->'itinerary', '[]'::jsonb) AS itinerary,\n\n    COALESCE((data->>'is_global_pricing')::boolean, false) AS is_global_pricing,\n\n    CASE\n      WHEN data ? 'global_pricing'\n           AND data->'global_pricing' <> 'null'::jsonb\n      THEN data->'global_pricing'\n      ELSE NULL\n    END AS global_pricing,\n\n    COALESCE((data->>'lead_price')::numeric, 0) AS lead_price,\n\n    COALESCE(\n      data->'services',\n      '{\"included\": [], \"excluded\": []}'::jsonb\n    ) AS services,\n\n    ARRAY(\n      SELECT jsonb_array_elements_text(COALESCE(data->'photo_urls', '[]'::jsonb))\n    ) AS photo_urls\n  FROM payload\n),\n\nensure_agency AS (\n  INSERT INTO public.agencies (\n    id,\n    name,\n    email,\n    phone\n  )\n  OVERRIDING SYSTEM VALUE\n  SELECT\n    agency_id,\n    'Default Agency',\n    'default@agency.local',\n    '0000000000'\n  FROM normalized\n  ON CONFLICT (id) DO NOTHING\n),\n\ninserted_tour AS (\n  INSERT INTO public.tours (\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    needs_review\n  )\n  SELECT\n    agency_id,\n    title,\n    countries,\n    duration_nights,\n    airline,\n    description,\n    itinerary,\n    'draft'::public.offer_status,\n    photo_urls,\n    is_global_pricing,\n    global_pricing,\n    lead_price,\n    services,\n    true\n  FROM normalized\n  RETURNING id, title, status, needs_review\n),\n\ninserted_steps AS (\n  INSERT INTO public.tour_steps (\n    tour_id,\n    city,\n    step_order,\n    duration_nights\n  )\n  SELECT\n    tour.id,\n    COALESCE(NULLIF(step->>'city', ''), 'Unknown'),\n    COALESCE((step->>'step_order')::integer, ord::integer),\n    COALESCE((step->>'duration_nights')::integer, 1)\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n  RETURNING id, tour_id, step_order\n),\n\ninserted_hotel_options AS (\n  INSERT INTO public.hotel_options (\n    tour_step_id,\n    hotel_id,\n    custom_hotel_name,\n    is_default,\n    pricing\n  )\n  SELECT\n    inserted_steps.id,\n\n    CASE\n      WHEN hotel->>'hotel_id' IS NULL\n           OR hotel->>'hotel_id' = ''\n           OR hotel->>'hotel_id' = 'null'\n      THEN NULL\n      ELSE (hotel->>'hotel_id')::bigint\n    END AS hotel_id,\n\n    NULLIF(hotel->>'custom_hotel_name', '') AS custom_hotel_name,\n\n    COALESCE((hotel->>'is_default')::boolean, false) AS is_default,\n\n    COALESCE(hotel->'pricing', '{}'::jsonb) AS pricing\n\n  FROM payload p\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'steps', '[]'::jsonb)\n  ) WITH ORDINALITY AS steps(step, ord)\n\n  JOIN inserted_steps\n    ON inserted_steps.step_order = COALESCE((step->>'step_order')::integer, ord::integer)\n\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(step->'hotels', '[]'::jsonb)\n  ) AS hotels(hotel)\n\n  RETURNING id\n),\n\ninserted_departures AS (\n  INSERT INTO public.departures (\n    tour_id,\n    departure_city,\n    stock,\n    flight_departure_time,\n    flight_arrival_time,\n    return_flight_departure_time,\n    return_flight_arrival_time\n  )\n  SELECT\n    tour.id,\n\n    COALESCE(NULLIF(departure->>'departure_city', ''), 'Alger') AS departure_city,\n\n    COALESCE((departure->>'stock')::integer, 0) AS stock,\n\n    (departure->>'flight_departure_time')::timestamptz AS flight_departure_time,\n\n    -- Outbound arrival: keep the real flight-plan value when present, otherwise\n    -- fall back to outbound departure + 1 hour (NOT NULL guard).\n    COALESCE(\n      CASE WHEN departure->>'flight_arrival_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'flight_arrival_time')::timestamptz ELSE NULL END,\n      (departure->>'flight_departure_time')::timestamptz + INTERVAL '1 hour'\n    ) AS flight_arrival_time,\n\n    COALESCE(\n      CASE WHEN departure->>'return_flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_departure_time')::timestamptz ELSE NULL END,\n      (departure->>'flight_departure_time')::timestamptz\n    ) AS return_flight_departure_time,\n\n    -- Return arrival: keep the real flight-plan value when present, otherwise\n    -- fall back to return departure + 1 hour (NOT NULL guard).\n    COALESCE(\n      CASE WHEN departure->>'return_flight_arrival_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_arrival_time')::timestamptz ELSE NULL END,\n      COALESCE(\n        CASE WHEN departure->>'return_flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN (departure->>'return_flight_departure_time')::timestamptz ELSE NULL END,\n        (departure->>'flight_departure_time')::timestamptz\n      ) + INTERVAL '1 hour'\n    ) AS return_flight_arrival_time\n\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  CROSS JOIN LATERAL jsonb_array_elements(\n    COALESCE(p.data->'departures', '[]'::jsonb)\n  ) AS departures(departure)\n\n  WHERE departure->>'flight_departure_time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'\n\n  RETURNING id\n)\n\n,\n\ninserted_hash AS (\n  INSERT INTO public.ingestion_hashes (\n    content_hash,\n    media_type,\n    whatsapp_message_id,\n    sender_jid,\n    caption_snippet,\n    tour_id\n  )\n  SELECT\n    NULLIF(data->>'_content_hash', ''),\n    COALESCE(NULLIF(data->>'_media_type', ''), 'image'),\n    NULLIF(data->>'messageId', ''),\n    NULLIF(data->>'senderJid', ''),\n    LEFT(COALESCE(data->>'text', data->>'imageCaption', ''), 200),\n    tour.id\n  FROM payload p\n  CROSS JOIN inserted_tour tour\n  WHERE data ? '_content_hash' AND data->>'_content_hash' IS NOT NULL AND data->>'_content_hash' <> ''\n  ON CONFLICT (content_hash) DO UPDATE SET tour_id = EXCLUDED.tour_id\n  RETURNING id\n)\n\nSELECT\n  tour.id AS tour_id,\n  tour.title,\n  tour.status,\n  tour.needs_review,\n  (SELECT count(*) FROM inserted_steps) AS inserted_steps_count,\n  (SELECT count(*) FROM inserted_hotel_options) AS inserted_hotel_options_count,\n  (SELECT count(*) FROM inserted_departures) AS inserted_departures_count,\n  (SELECT count(*) FROM inserted_hash) AS inserted_hash_count\nFROM inserted_tour tour;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -718,7 +768,9 @@
           "name": "Postgres account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "Persistance PostgreSQL Atomique : Insère le voyage, les étapes, les hôtels, les dates de départ et sauvegarde l'empreinte SHA-256 dans ingestion_hashes."
     },
     {
       "parameters": {
@@ -741,7 +793,9 @@
           "id": "D7KMPLAjOaEtS3PO",
           "name": "Supabase Storage Local"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Stockage Supabase Image : Téléverse l'image du flyer dans le bucket S3/Supabase Storage sous son chemin hiérarchique."
     },
     {
       "parameters": {
@@ -764,7 +818,9 @@
           "id": "D7KMPLAjOaEtS3PO",
           "name": "Supabase Storage Local"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Stockage Supabase PDF : Téléverse la brochure PDF dans le bucket S3/Supabase Storage."
     },
     {
       "parameters": {
@@ -779,7 +835,9 @@
         8320
       ],
       "id": "8073fe96-5866-47d4-8bca-6cc2e7e5404d",
-      "name": "Merge Image JSON + Binary"
+      "name": "Merge Image JSON + Binary",
+      "notesInFlow": true,
+      "notes": "Jointure Données Image : Associe le fichier binaire de l'image aux métadonnées de voyage calculées."
     },
     {
       "parameters": {
@@ -794,11 +852,13 @@
         8848
       ],
       "id": "976d30a4-1db7-418c-a96c-a71cc9af706f",
-      "name": "Merge PDF JSON + Binary"
+      "name": "Merge PDF JSON + Binary",
+      "notesInFlow": true,
+      "notes": "Jointure Données PDF : Associe le fichier binaire du PDF aux métadonnées de voyage calculées."
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// NŒUD : Build Storage Path\n// PLACE : Après \"List Storage Folder\", AVANT les uploads et le SQL\n// \n// Les slugs (country, agency) ont déjà été calculés par \"Compute Slugs\"\n// donc on les lit directement depuis $json._slugs (pas de recalcul).\n// ============================================================================\n\n\nconst finalPayload = $('Compute Slugs').first().json;\n\n// On récupère les infos de présence des médias depuis Detect Content\nconst detectData = $('Detect Content & Generate JobId').first().json;\nconst hasText = detectData.hasText === true;\nconst hasImage = detectData.hasImage === true;\nconst hasPdf = detectData.hasPdf === true;\nconst rawText = detectData.text || null;\nconst jobId = detectData.jobId || `job_${Date.now()}_unknown`;\n\n// ----------------------------------------------------------------------------\n// 1. SLUGS (déjà calculés par Compute Slugs)\n// ----------------------------------------------------------------------------\nconst slugs = finalPayload._slugs || {};\nconst countrySlug = slugs.country || 'unknown-country';\nconst agencySlug = slugs.agency || 'unknown-agency';\nconst countryRaw = slugs.country_raw || null;\nconst agencyRaw = slugs.agency_raw || null;\n\n// ----------------------------------------------------------------------------\n// 2. CALCUL DU PROCHAIN PUBLICATION_ID\n// ----------------------------------------------------------------------------\nconst listResult = $input.first().json;\n\n// L'API Supabase peut renvoyer dans différents formats selon la config n8n\nlet folders = [];\nif (Array.isArray(listResult)) {\n  folders = listResult;\n} else if (Array.isArray(listResult?.body)) {\n  folders = listResult.body;\n} else if (Array.isArray(listResult?.data)) {\n  folders = listResult.data;\n}\n\nconst existingSeqs = folders\n  .map(f => f?.name || '')\n  .map(name => parseInt(name, 10))\n  .filter(n => Number.isFinite(n) && n > 0);\n\nconst maxSeq = existingSeqs.length > 0 ? Math.max(...existingSeqs) : 0;\nconst nextSeq = maxSeq + 1;\nconst publicationId = String(nextSeq).padStart(2, '0');\n\n// ----------------------------------------------------------------------------\n// 3. CHEMINS\n// ----------------------------------------------------------------------------\nconst basePath = `${countrySlug}/${agencySlug}/${publicationId}`;\n\nconst hasMeaningfulText = hasText && rawText && String(rawText).trim().length > 0;\nconst isTextOnly = hasMeaningfulText && !hasImage && !hasPdf;\nconst captionGoesWithImage = hasMeaningfulText && hasImage;\nconst captionGoesWithPdf = hasMeaningfulText && hasPdf;\n\nconst paths = {\n  image_file: hasImage ? `${basePath}/${publicationId}.jpg` : null,\n  pdf_file: hasPdf ? `${basePath}/${publicationId}.pdf` : null,\n  caption_file: hasMeaningfulText ? `${basePath}/caption.txt` : null,\n};\n\n// ----------------------------------------------------------------------------\n// 4. URLS PUBLIQUES\n// ----------------------------------------------------------------------------\nconst SUPABASE_PUBLIC_URL = $env.SUPABASE_PUBLIC_URL || 'http://localhost:54321';\nconst BUCKET = 'travel-offer-assets';\n\nfunction buildPublicUrl(path) {\n  if (!path) return null;\n  return `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${BUCKET}/${path}`;\n}\n\nconst photoUrls = [];\nif (paths.image_file) photoUrls.push(buildPublicUrl(paths.image_file));\nelse if (paths.pdf_file) photoUrls.push(buildPublicUrl(paths.pdf_file));\nelse if (paths.caption_file) photoUrls.push(buildPublicUrl(paths.caption_file));\n\n// ----------------------------------------------------------------------------\n// 5. SORTIE\n// ----------------------------------------------------------------------------\n// On reprend le payload nettoyé (depuis Compute Slugs), puis on ajoute _storage\nreturn [{\n  json: {\n    ...finalPayload,\n    photo_urls: photoUrls.length > 0 ? photoUrls : (finalPayload.photo_urls || []),\n    \n    _storage: {\n      bucket: BUCKET,\n      base_path: basePath,\n      job_id: jobId,\n      publication_id: publicationId,\n      next_seq: nextSeq,\n      max_seq_found: maxSeq,\n      country_slug: countrySlug,\n      agency_slug: agencySlug,\n      country_raw: countryRaw,\n      agency_name_raw: agencyRaw,\n\n      has_text: hasText,\n      has_meaningful_text: hasMeaningfulText,\n      has_image: hasImage,\n      has_pdf: hasPdf,\n      is_text_only: isTextOnly,\n      caption_goes_with_image: captionGoesWithImage,\n      caption_goes_with_pdf: captionGoesWithPdf,\n\n      raw_text: rawText,\n      paths,\n\n      public_urls: {\n        image: buildPublicUrl(paths.image_file),\n        pdf: buildPublicUrl(paths.pdf_file),\n        caption: buildPublicUrl(paths.caption_file),\n      },\n      \n      // Debug : combien de dossiers ont été listés\n      debug_folders_count: folders.length,\n      debug_existing_seqs: existingSeqs,\n    }\n  }\n}];\n"
+        "jsCode": "// ============================================================================\n// NŒUD : Build Storage Path\n// PLACE : Après \"List Storage Folder\", AVANT les uploads et le SQL\n// \n// Les slugs (country, agency) ont déjà été calculés par \"Compute Slugs\"\n// donc on les lit directement depuis $json._slugs (pas de recalcul).\n// ============================================================================\n\n\nconst finalPayload = $('Compute Slugs').first().json;\n\n// On récupère les infos de présence des médias depuis Detect Content\nconst detectData = $('Detect Content & Generate JobId').first().json;\nconst hasText = detectData.hasText === true;\nconst hasImage = detectData.hasImage === true;\nconst hasPdf = detectData.hasPdf === true;\nconst rawText = detectData.text || null;\nconst jobId = detectData.jobId || `job_${Date.now()}_unknown`;\n\n// ----------------------------------------------------------------------------\n// 1. SLUGS (déjà calculés par Compute Slugs)\n// ----------------------------------------------------------------------------\nconst slugs = finalPayload._slugs || {};\nconst countrySlug = slugs.country || 'unknown-country';\nconst agencySlug = slugs.agency || 'unknown-agency';\nconst countryRaw = slugs.country_raw || null;\nconst agencyRaw = slugs.agency_raw || null;\n\n// ----------------------------------------------------------------------------\n// 2. CALCUL DU PROCHAIN PUBLICATION_ID\n// ----------------------------------------------------------------------------\nconst listResult = $input.first().json;\n\n// L'API Supabase peut renvoyer dans différents formats selon la config n8n\nlet folders = [];\nif (Array.isArray(listResult)) {\n  folders = listResult;\n} else if (Array.isArray(listResult?.body)) {\n  folders = listResult.body;\n} else if (Array.isArray(listResult?.data)) {\n  folders = listResult.data;\n}\n\nconst existingSeqs = folders\n  .map(f => f?.name || '')\n  .map(name => parseInt(name, 10))\n  .filter(n => Number.isFinite(n) && n > 0);\n\nconst maxSeq = existingSeqs.length > 0 ? Math.max(...existingSeqs) : 0;\nconst nextSeq = maxSeq + 1;\nconst publicationId = String(nextSeq).padStart(2, '0');\n\n// ----------------------------------------------------------------------------\n// 3. CHEMINS\n// ----------------------------------------------------------------------------\nconst basePath = `${countrySlug}/${agencySlug}/${publicationId}`;\n\nconst hasMeaningfulText = hasText && rawText && String(rawText).trim().length > 0;\nconst isTextOnly = hasMeaningfulText && !hasImage && !hasPdf;\nconst captionGoesWithImage = hasMeaningfulText && hasImage;\nconst captionGoesWithPdf = hasMeaningfulText && hasPdf;\n\nconst paths = {\n  image_file: hasImage ? `${basePath}/${publicationId}.jpg` : null,\n  pdf_file: hasPdf ? `${basePath}/${publicationId}.pdf` : null,\n  caption_file: hasMeaningfulText ? `${basePath}/caption.txt` : null,\n};\n\n// ----------------------------------------------------------------------------\n// 4. URLS PUBLIQUES\n// ----------------------------------------------------------------------------\nconst SUPABASE_PUBLIC_URL = $env.SUPABASE_PUBLIC_URL || 'http://localhost:54321';\nconst BUCKET = 'travel-offer-assets';\n\nfunction buildPublicUrl(path) {\n  if (!path) return null;\n  return `${SUPABASE_PUBLIC_URL}/storage/v1/object/public/${BUCKET}/${path}`;\n}\n\nconst photoUrls = [];\nif (paths.image_file) photoUrls.push(buildPublicUrl(paths.image_file));\nelse if (paths.pdf_file) photoUrls.push(buildPublicUrl(paths.pdf_file));\nelse if (paths.caption_file) photoUrls.push(buildPublicUrl(paths.caption_file));\n\n// ----------------------------------------------------------------------------\n// 5. SORTIE\n// ----------------------------------------------------------------------------\n// On reprend le payload nettoyé (depuis Compute Slugs), puis on ajoute _storage\nreturn [{\n  json: {\n    ...finalPayload,\n    _content_hash: detectData._content_hash || null,\n    _media_type: detectData._media_type || 'image',\n    messageId: detectData.messageId || null,\n    senderJid: detectData.senderJid || null,\n    text: detectData.text || null,\n    imageCaption: detectData.imageCaption || null,\n    photo_urls: photoUrls.length > 0 ? photoUrls : (finalPayload.photo_urls || []),\n    \n    _storage: {\n      bucket: BUCKET,\n      base_path: basePath,\n      job_id: jobId,\n      publication_id: publicationId,\n      next_seq: nextSeq,\n      max_seq_found: maxSeq,\n      country_slug: countrySlug,\n      agency_slug: agencySlug,\n      country_raw: countryRaw,\n      agency_name_raw: agencyRaw,\n\n      has_text: hasText,\n      has_meaningful_text: hasMeaningfulText,\n      has_image: hasImage,\n      has_pdf: hasPdf,\n      is_text_only: isTextOnly,\n      caption_goes_with_image: captionGoesWithImage,\n      caption_goes_with_pdf: captionGoesWithPdf,\n\n      raw_text: rawText,\n      paths,\n\n      public_urls: {\n        image: buildPublicUrl(paths.image_file),\n        pdf: buildPublicUrl(paths.pdf_file),\n        caption: buildPublicUrl(paths.caption_file),\n      },\n      \n      // Debug : combien de dossiers ont été listés\n      debug_folders_count: folders.length,\n      debug_existing_seqs: existingSeqs,\n    }\n  }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -807,7 +867,9 @@
         7840
       ],
       "id": "fa659fbc-4aa6-4424-aca2-4cd00ccf1c57",
-      "name": "Build Storage Path"
+      "name": "Build Storage Path",
+      "notesInFlow": true,
+      "notes": "Génération Chemins Supabase : Construit l'arborescence {country}/{agency}/{id}/ et génère les URLs publiques pérennes."
     },
     {
       "parameters": {
@@ -820,7 +882,9 @@
         7520
       ],
       "id": "029caab8-33eb-4c27-b540-3342b2088f83",
-      "name": "Prepare Caption"
+      "name": "Prepare Caption",
+      "notesInFlow": true,
+      "notes": "Préparation Légende : Génère un fichier texte contenant la légende WhatsApp originale pour archive."
     },
     {
       "parameters": {
@@ -843,7 +907,9 @@
           "id": "D7KMPLAjOaEtS3PO",
           "name": "Supabase Storage Local"
         }
-      }
+      },
+      "notesInFlow": true,
+      "notes": "Stockage Supabase Légende : Enregistre le texte original du message WhatsApp à côté des médias sur Supabase Storage."
     },
     {
       "parameters": {
@@ -890,7 +956,8 @@
       "maxTries": 2,
       "waitBetweenTries": 5000,
       "continueOnFail": true,
-      "notes": "Liste les dossiers existants dans {country}/{agency}/ pour calculer le prochain publication_id"
+      "notes": "Calcul Séquence Publication : Interroge Supabase Storage pour déterminer le prochain numéro séquentiel de publication.",
+      "notesInFlow": true
     },
     {
       "parameters": {
@@ -903,7 +970,9 @@
         7840
       ],
       "id": "be9ddb5b-e561-4376-9490-e04220f41f7a",
-      "name": "Compute Slugs"
+      "name": "Compute Slugs",
+      "notesInFlow": true,
+      "notes": "Génération Slugs & Identifiants : Crée les slugs SEO-friendly pour le voyage, l'agence et la destination."
     },
     {
       "parameters": {
@@ -937,7 +1006,9 @@
         7648
       ],
       "id": "9df88084-795a-40f6-9251-12e715493a0d",
-      "name": "If Direct Image"
+      "name": "If Direct Image",
+      "notesInFlow": true,
+      "notes": "Détection Upload Direct Image : Vérifie si le binaire provient d'un téléversement direct ou du webhook WhatsApp."
     },
     {
       "parameters": {
@@ -971,7 +1042,9 @@
         8592
       ],
       "id": "2a4721b1-c1e5-4262-9df4-ae2dad11155a",
-      "name": "If Direct PDF"
+      "name": "If Direct PDF",
+      "notesInFlow": true,
+      "notes": "Détection Upload Direct PDF : Vérifie si le binaire provient d'un téléversement direct ou du webhook WhatsApp."
     },
     {
       "parameters": {
@@ -1014,7 +1087,9 @@
           "name": "Google Gemini(PaLM) Api account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "Analyse Sémantique PDF Gemini : Extrait la structure du voyage (dates, prix, hôtels, étapes) depuis le texte OCR du PDF."
     },
     {
       "parameters": {
@@ -1027,7 +1102,9 @@
         8800
       ],
       "id": "63898c4f-42fb-45fc-88a0-b1076b6977de",
-      "name": "Prepare Gemini Body"
+      "name": "Prepare Gemini Body",
+      "notesInFlow": true,
+      "notes": "Formatage Requête PDF Gemini : Construit le prompt système et le payload JSON pour l'analyse du PDF par Gemini."
     },
     {
       "parameters": {
@@ -1044,7 +1121,9 @@
       ],
       "id": "09527d82-d643-4513-82d1-23971303893a",
       "name": "WhatsApp Webhook",
-      "webhookId": "edc97305-be6d-4eee-a64e-2782780b51da"
+      "webhookId": "edc97305-be6d-4eee-a64e-2782780b51da",
+      "notesInFlow": true,
+      "notes": "Réception Webhook WhatsApp : Écoute les événements entrants en temps réel envoyés par l'instance Evolution API."
     },
     {
       "parameters": {
@@ -1061,11 +1140,13 @@
         8192
       ],
       "id": "ea68467c-b77f-4c71-b85c-b19a1678fb5a",
-      "name": "Respond 200 Immediately"
+      "name": "Respond 200 Immediately",
+      "notesInFlow": true,
+      "notes": "Accusé de Réception HTTP 200 : Répond instantanément à WhatsApp / Evolution API pour éviter les réémissions et timeouts."
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================\n// WHATSAPP EARLY FILTER + DEDUP\n// Ignore fromMe, non-message events, status/update events\n// Deduplicate by message.key.id\n// ============================================================\n\nconst root = $input.first().json;\nconst envelope = root.body || {};\nconst eventType = (envelope.event || '').toLowerCase();\nconst data = envelope.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\n// ── 1. Ignore non-message events (only messages.upsert carries real messages)\n// Evolution events: messages.upsert, messages.update, connection.update, presence.update, etc.\nconst isMessageEvent = eventType === 'messages.upsert' || (!eventType && !!data.message);\nif (!isMessageEvent) {\n  return []; // drop: not a message event (status/update/presence/connection)\n}\n\n// ── 2. Ignore status/update events explicitly\nif (eventType.includes('update') || eventType.includes('status') || eventType.includes('presence') || eventType.includes('connection')) {\n  return [];\n}\n\n// ── 3. Ignore fromMe (messages sent by us)\nif (key.fromMe === true) {\n  return [];\n}\n\n// ── 4. Liste blanche des groupes B2B autorisés\nconst ALLOWED_B2B_GROUPS = [\n  '120363417369802582@g.us', // Groupe B2B : R.M Annonces b2b agences de voyages\n];\n\nconst remoteJid = key.remoteJid || '';\nif (!ALLOWED_B2B_GROUPS.includes(remoteJid)) {\n  return []; // Ignore tout ce qui ne vient pas de vos groupes B2B autorisés\n}\n\n\n// ── 5. Must contain an actual message payload\nconst hasAnyContent = !!(\n  message.conversation ||\n  message.extendedTextMessage ||\n  message.imageMessage ||\n  message.documentMessage ||\n  message?.viewOnceMessage ||\n  message?.ephemeralMessage\n);\nif (!hasAnyContent) {\n  return [];\n}\n\n// ============================================================\n// ── 6. DÉDUPLICATION INTELLIGENTE (Message, Média & Texte)\n// ============================================================\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processedMessageIds) staticData.processedMessageIds = [];\nif (!staticData.processedMediaShas) staticData.processedMediaShas = [];\nif (!staticData.processedTextSignatures) staticData.processedTextSignatures = [];\n\n// A. Déduplication par ID de message WhatsApp (même événement réseau)\nconst messageId = key.id || null;\nif (messageId) {\n  if (staticData.processedMessageIds.includes(messageId)) {\n    return []; // Doublon réseau direct\n  }\n  staticData.processedMessageIds.push(messageId);\n  if (staticData.processedMessageIds.length > 1000) {\n    staticData.processedMessageIds.shift();\n  }\n}\n\n// B. Déduplication par empreinte de média (Flyer Image ou Brochure PDF)\n// WhatsApp fournit directement le SHA-256 du fichier dans le payload\n// B. Déduplication par empreinte de média (Flyer Image ou Brochure PDF)\nconst mediaObj = message.imageMessage \n  || message.documentMessage \n  || message?.viewOnceMessage?.message?.imageMessage\n  || message?.ephemeralMessage?.message?.imageMessage;\n\nlet fileSha = null;\nif (mediaObj?.fileSha256) {\n  const raw = mediaObj.fileSha256;\n  if (typeof raw === 'string') {\n    fileSha = raw;\n  } else if (Array.isArray(raw?.data)) {\n    fileSha = Buffer.from(raw.data).toString('base64');\n  } else if (Buffer.isBuffer(raw) || Array.isArray(raw)) {\n    fileSha = Buffer.from(raw).toString('base64');\n  } else {\n    fileSha = JSON.stringify(raw);\n  }\n} else if (mediaObj?.mediaKey) {\n  fileSha = JSON.stringify(mediaObj.mediaKey);\n}\n\nif (fileSha) {\n  if (staticData.processedMediaShas.includes(fileSha)) {\n    return []; // Même flyer déjà analysé récemment : 0 crédit IA dépensé !\n  }\n  staticData.processedMediaShas.push(fileSha);\n  if (staticData.processedMediaShas.length > 1000) {\n    staticData.processedMediaShas.shift();\n  }\n}\n\n\n// C. Déduplication des annonces textuelles identiques\nconst rawText = (message.conversation || message.extendedTextMessage?.text || '').trim();\nconst cleanedText = rawText.toLowerCase().replace(/\\s+/g, ' ');\n\nif (cleanedText.length > 50) {\n  // Empreinte sur les 150 premiers caractères\n  const textSignature = cleanedText.slice(0, 150);\n  if (staticData.processedTextSignatures.includes(textSignature)) {\n    return []; // Même texte déjà posté récemment\n  }\n  staticData.processedTextSignatures.push(textSignature);\n  if (staticData.processedTextSignatures.length > 1000) {\n    staticData.processedTextSignatures.shift();\n  }\n}\n\n// Pass through unchanged so Detect Content sees the same shape as before\nreturn [{ json: root, binary: $input.first().binary }];\n\n"
+        "jsCode": "// ============================================================\n// WHATSAPP EARLY FILTER + DEDUP\n// Ignore fromMe, non-message events, status/update events\n// Deduplicate by message.key.id\n// ============================================================\n\nconst root = $input.first().json;\nconst envelope = root.body || {};\nconst eventType = (envelope.event || '').toLowerCase();\nconst data = envelope.data || {};\nconst key = data.key || {};\nconst message = data.message || {};\n\n// ── 1. Ignore non-message events (only messages.upsert carries real messages)\n// Evolution events: messages.upsert, messages.update, connection.update, presence.update, etc.\nconst isMessageEvent = eventType === 'messages.upsert' || (!eventType && !!data.message);\nif (!isMessageEvent) {\n  return []; // drop: not a message event (status/update/presence/connection)\n}\n\n// ── 2. Ignore status/update events explicitly\nif (eventType.includes('update') || eventType.includes('status') || eventType.includes('presence') || eventType.includes('connection')) {\n  return [];\n}\n\n// ── 3. Ignore fromMe (messages sent by us)\nif (key.fromMe === true) {\n  return [];\n}\n\n// ── 4. Liste blanche des groupes B2B autorisés\nconst ALLOWED_B2B_GROUPS = [\n  '120363417369802582@g.us', // Groupe B2B : R.M Annonces b2b agences de voyages\n];\n\nconst remoteJid = key.remoteJid || '';\nif (!ALLOWED_B2B_GROUPS.includes(remoteJid)) {\n  return []; // Ignore tout ce qui ne vient pas de vos groupes B2B autorisés\n}\n\n\n// ── 5. Must contain an actual message payload\nconst hasAnyContent = !!(\n  message.conversation ||\n  message.extendedTextMessage ||\n  message.imageMessage ||\n  message.documentMessage ||\n  message?.viewOnceMessage ||\n  message?.ephemeralMessage\n);\nif (!hasAnyContent) {\n  return [];\n}\n\n// ============================================================\n// ── 6. DÉDUPLICATION INTELLIGENTE (Message, Média & Texte)\n// ============================================================\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processedMessageIds) staticData.processedMessageIds = [];\nif (!staticData.processedMediaShas) staticData.processedMediaShas = [];\nif (!staticData.processedTextSignatures) staticData.processedTextSignatures = [];\n\n// A. Déduplication par ID de message WhatsApp (même événement réseau)\nconst messageId = key.id || null;\nif (messageId) {\n  if (staticData.processedMessageIds.includes(messageId)) {\n    return []; // Doublon réseau direct\n  }\n  staticData.processedMessageIds.push(messageId);\n  if (staticData.processedMessageIds.length > 1000) {\n    staticData.processedMessageIds.shift();\n  }\n}\n\n// B. Déduplication par empreinte de média + légende (Flyer Image ou Brochure PDF)\nconst mediaObj = message.imageMessage \n  || message.documentMessage \n  || message?.viewOnceMessage?.message?.imageMessage\n  || message?.ephemeralMessage?.message?.imageMessage;\n\nlet fileSha = null;\nif (mediaObj?.fileSha256) {\n  const raw = mediaObj.fileSha256;\n  if (typeof raw === 'string') {\n    fileSha = raw;\n  } else if (Array.isArray(raw?.data)) {\n    fileSha = Buffer.from(raw.data).toString('base64');\n  } else if (Buffer.isBuffer(raw) || Array.isArray(raw)) {\n    fileSha = Buffer.from(raw).toString('base64');\n  } else {\n    fileSha = JSON.stringify(raw);\n  }\n} else if (mediaObj?.mediaKey) {\n  fileSha = JSON.stringify(mediaObj.mediaKey);\n}\n\nconst rawCaption = (message.conversation || message.extendedTextMessage?.text || mediaObj?.caption || '').trim().toLowerCase().replace(/\\s+/g, ' ');\nconst combinedFingerprint = fileSha ? `media:${fileSha}|cap:${rawCaption}` : (rawCaption.length > 30 ? `txt:${rawCaption}` : null);\n\nif (combinedFingerprint) {\n  if (staticData.processedMediaShas.includes(combinedFingerprint)) {\n    return []; // Même offre (média + légende) déjà vue récemment : STOP immédiat (0 crédit IA)\n  }\n  staticData.processedMediaShas.push(combinedFingerprint);\n  if (staticData.processedMediaShas.length > 2000) {\n    staticData.processedMediaShas.shift();\n  }\n}\n\n// C. Déduplication des annonces textuelles identiques\nconst rawText = (message.conversation || message.extendedTextMessage?.text || '').trim();\nconst cleanedText = rawText.toLowerCase().replace(/\\s+/g, ' ');\n\nif (cleanedText.length > 50) {\n  // Empreinte sur les 150 premiers caractères\n  const textSignature = cleanedText.slice(0, 150);\n  if (staticData.processedTextSignatures.includes(textSignature)) {\n    return []; // Même texte déjà posté récemment\n  }\n  staticData.processedTextSignatures.push(textSignature);\n  if (staticData.processedTextSignatures.length > 1000) {\n    staticData.processedTextSignatures.shift();\n  }\n}\n\n// Pass through unchanged so Detect Content sees the same shape as before\nreturn [{ json: root, binary: $input.first().binary }];\n\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1075,7 +1156,9 @@
       ],
       "id": "d0093970-355a-4161-9684-2330cb0dd196",
       "name": "WhatsApp Filter & Dedup",
-      "alwaysOutputData": true
+      "alwaysOutputData": false,
+      "notesInFlow": true,
+      "notes": "Filtrage Initial & Déduplication Rapide : Ignore les statuts, messages sortants et élimine les doublons récents (empreinte média + légende en mémoire)."
     },
     {
       "parameters": {
@@ -1109,7 +1192,9 @@
         7840
       ],
       "id": "301274a7-e6e2-4c38-b459-9ca2f1ba8bcf",
-      "name": "Is Manual Upload?"
+      "name": "Is Manual Upload?",
+      "notesInFlow": true,
+      "notes": "Aiguillage Mode d'Ingestion : Détermine si le message provient d'un flux WhatsApp en direct ou d'un test/upload manuel."
     },
     {
       "parameters": {
@@ -1122,7 +1207,9 @@
         8272
       ],
       "id": "dd0a794c-2fb6-4958-9af4-a9daf12e2e04",
-      "name": "Prepare Gemini Body image"
+      "name": "Prepare Gemini Body image",
+      "notesInFlow": true,
+      "notes": "Formatage Requête Image Gemini : Construit le prompt système et le payload JSON pour l'analyse du flyer par Gemini."
     },
     {
       "parameters": {
@@ -1165,7 +1252,73 @@
           "name": "Google Gemini(PaLM) Api account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "notesInFlow": true,
+      "notes": "Analyse Sémantique Image Gemini : Extrait la structure du voyage (dates, prix, hôtels, étapes) depuis le texte OCR de l'image."
+    },
+    {
+      "parameters": {
+        "content": "## 1. Réception & Filtrage Réseau\n- Webhook WhatsApp (Evolution API)\n- Webhook Ingestion Manuelle\n- Accusé 200 immédiat\n- Filtrage fromMe / B2B & Dédup mémoire",
+        "height": 320,
+        "width": 380,
+        "color": 4
+      },
+      "id": "sticky-zone-1",
+      "name": "Note : Réception & Filtrage",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        7700
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Détection Média & Anti-Doublon SHA-256\n- Calcul hash cryptographique (Image/PDF + Légende)\n- Détection de bruit (visas, vols secs, salutations)\n- Interrogation Supabase ingestion_hashes (0 crédit IA si doublon)",
+        "height": 320,
+        "width": 420,
+        "color": 6
+      },
+      "id": "sticky-zone-2",
+      "name": "Note : Anti-Doublon & Anti-Bruit",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        360,
+        7860
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. Extraction OCR LlamaParse & Analyse Gemini\n- OCR LlamaParse Standard (1 crédit / page au lieu de 45)\n- Gemini 1.5 Flash : Structuration sémantique (prix, dates, hôtels)\n- Normalisation stricte JSON",
+        "height": 320,
+        "width": 480,
+        "color": 2
+      },
+      "id": "sticky-zone-3",
+      "name": "Note : IA & Extraction",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        7860
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4. Supabase Storage & Transaction PostgreSQL\n- Stockage médias dans Bucket Supabase (S3)\n- Transaction SQL atomique : Tour + Steps + Options + Departures\n- Enregistrement du hash dans public.ingestion_hashes",
+        "height": 320,
+        "width": 480,
+        "color": 5
+      },
+      "id": "sticky-zone-4",
+      "name": "Note : Persistance & SQL",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        7860
+      ]
     }
   ],
   "pinData": {},
@@ -1697,10 +1850,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "a3d7f85a-fc4c-435b-bd20-d9e3a55e87bd",
-  "meta": {
-    "instanceId": "5dd9e5a815d8a739094b81fb6508609018837a4f19d92d90ea50e9516ec45d61"
-  },
-  "id": "ZC8ThO4FCw48gpjS",
-  "tags": []
+  "versionId": "7d1f763d-18da-4b09-bc9f-dc3ee31ba1e6",
+  "meta": {},
+  "id": "ZC8ThO4FCw48gpjS"
 }
