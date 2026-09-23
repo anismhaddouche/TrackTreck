@@ -118,7 +118,40 @@
         }
     }
     # =========================================================================
-    # n8n Static & Assets (when Referer is n8n, or static files)
+    # Evolution Manager Assets
+    # Evolution Manager bundle uses /assets/index-CO3NSIFj.js, /assets/index-DsIrum0U.css,
+    # /assets/images/*, and requests with Referer containing 'manager'.
+    # =========================================================================
+    @evolution_manager_assets {
+        header Referer *manager*
+        path /assets/*
+    }
+    handle @evolution_manager_assets {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+    handle /assets/index-CO3NSIFj.js {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+    handle /assets/index-DsIrum0U.css {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+    handle /assets/images/* {
+        reverse_proxy evolution-api:8080 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
+    # n8n Static, REST & Assets
+    # n8n sets 'Referrer-Policy: no-referrer', so browser bundle chunk imports
+    # (/assets/*.js, /assets/*.css) and API calls (/rest/*) have no Referer header.
+    # All general /assets/*, /static/*, and /rest/* routes must target n8n.
     # =========================================================================
     handle /static/* {
         reverse_proxy n8n:5678 {
@@ -126,31 +159,18 @@
         }
     }
 
-    @n8n_assets {
-        header Referer *n8n*
-        path /assets/*
-    }
-    handle @n8n_assets {
-        reverse_proxy n8n:5678 {
-            flush_interval -1
-        }
-    }
-
-    @n8n_rest {
-        header Referer *n8n*
-        path /rest/*
-    }
-    handle @n8n_rest {
+    handle /rest/* {
         reverse_proxy n8n:5678 {
             flush_interval -1
         }
     }
 
     handle /assets/* {
-        reverse_proxy evolution-api:8080 {
+        reverse_proxy n8n:5678 {
             flush_interval -1
         }
     }
+
     handle /favicon.ico {
         reverse_proxy evolution-api:8080
     }
