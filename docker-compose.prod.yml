@@ -107,6 +107,10 @@ services:
       N8N_PROXY_HOPS: 1
       GENERIC_TIMEZONE: ${TZ:-UTC}
       N8N_DIAGNOSTICS_ENABLED: "false"
+      # Automatic execution pruning to keep SQLite database fast and small
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "72"
+      EXECUTIONS_DATA_PRUNE_MAX_COUNT: "500"
       # HTTP-only deployment for now: disable the secure-cookie flag, otherwise
       # the editor login cookie is dropped by the browser.
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
