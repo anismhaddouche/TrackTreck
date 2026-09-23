@@ -35,6 +35,23 @@
     }
 
     # =========================================================================
+    # Metabase BI — bii.tracktreck.com subdomain & /bi IP fallback
+    # =========================================================================
+    @metabase host bii.tracktreck.com
+    handle @metabase {
+        reverse_proxy metabase:3000 {
+            flush_interval -1
+        }
+    }
+
+    redir /bi /bi/ 308
+    handle_path /bi/* {
+        reverse_proxy metabase:3000 {
+            flush_interval -1
+        }
+    }
+
+    # =========================================================================
     # Admin SPA (Vite build with base=/admin/)
     # =========================================================================
     redir /admin /admin/ 308

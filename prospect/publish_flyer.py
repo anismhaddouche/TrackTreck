@@ -138,69 +138,88 @@ def send_flyer(force=False, test_group=None):
     with open(FLYER_FILE, "rb") as f:
         b64_image = base64.b64encode(f.read()).decode("utf-8")
 
-    group_id = test_group or config.get("target_group_id")
+    if test_group:
+        targets = [{"id": test_group, "name": "TEST"}]
+    elif "target_groups" in config and config["target_groups"]:
+        targets = config["target_groups"]
+    else:
+        targets = [{"id": config.get("target_group_id"), "name": config.get("target_group_name", "B2B")}]
+
     api_url = config.get("evolution_api_url", "http://127.0.0.1/api").rstrip("/")
     instance = config.get("instance_name", "tracktrek")
     api_key = config.get("api_key")
-
     endpoint = f"{api_url}/message/sendMedia/{instance}"
 
-    payload = {
-        "number": group_id,
-        "mediatype": "image",
-        "mimetype": "image/jpeg",
-        "caption": caption,
-        "media": b64_image,
-        "fileName": "flyer_macaway.jpg"
-    }
+    overall_success = True
+    any_sent = False
 
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "apikey": api_key,
-            "Content-Type": "application/json"
-        },
-        method="POST"
-    )
+    for idx, target in enumerate(targets):
+        group_id = target.get("id")
+        group_label = "TEST" if test_group else target.get("name", "B2B")
 
-    group_label = "TEST" if test_group else config.get("target_group_name", "B2B")
-    log(f"Publication du Flyer dans '{group_label}' ({group_id})...")
+        if idx > 0:
+            delay_between = config.get("inter_group_delay_seconds", 15)
+            log(f"Pause anti-spam de sécurité ({delay_between}s) avant le groupe suivant...")
+            time.sleep(delay_between)
 
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            resp_body = resp.read().decode("utf-8")
-            res_json = json.loads(resp_body)
-            msg_id = res_json.get("key", {}).get("id") or "envoyé"
+        payload = {
+            "number": group_id,
+            "mediatype": "image",
+            "mimetype": "image/jpeg",
+            "caption": caption,
+            "media": b64_image,
+            "fileName": "flyer_macaway.jpg"
+        }
 
-            log(f"SUCCÈS : Flyer publié avec succès ! (Message ID: {msg_id})")
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "apikey": api_key,
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
 
-            # Sauvegarde dans l'historique
-            now_iso = datetime.now(timezone.utc).isoformat()
-            is_test = bool(test_group)
-            if not is_test:
-                history["sent_count"] = history.get("sent_count", 0) + 1
-                history["last_slot"] = current_slot
-            history["history"].append({
-                "timestamp": now_iso,
-                "slot": current_slot,
-                "group_id": group_id,
-                "group_name": group_label,
-                "message_id": msg_id,
-                "forced": force,
-                "is_test": is_test
-            })
-            history["history"] = history["history"][-50:]
-            save_history(history)
-            return True
+        log(f"Publication du Flyer dans '{group_label}' ({group_id})...")
 
-    except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="ignore")
-        log(f"ERREUR HTTP {e.code} Evolution API : {err}")
-        return False
-    except Exception as e:
-        log(f"ERREUR d'envoi : {e}")
-        return False
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                resp_body = resp.read().decode("utf-8")
+                res_json = json.loads(resp_body)
+                msg_id = res_json.get("key", {}).get("id") or "envoyé"
+
+                log(f"SUCCÈS : Flyer publié avec succès dans '{group_label}' ! (Message ID: {msg_id})")
+                any_sent = True
+
+                # Sauvegarde dans l'historique
+                now_iso = datetime.now(timezone.utc).isoformat()
+                is_test = bool(test_group)
+                history["history"].append({
+                    "timestamp": now_iso,
+                    "slot": current_slot,
+                    "group_id": group_id,
+                    "group_name": group_label,
+                    "message_id": msg_id,
+                    "forced": force,
+                    "is_test": is_test
+                })
+
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="ignore")
+            log(f"ERREUR HTTP {e.code} Evolution API pour '{group_label}' : {err}")
+            overall_success = False
+        except Exception as e:
+            log(f"ERREUR d'envoi pour '{group_label}' : {e}")
+            overall_success = False
+
+    if any_sent and not bool(test_group):
+        history["sent_count"] = history.get("sent_count", 0) + 1
+        history["last_slot"] = current_slot
+
+    history["history"] = history["history"][-100:]
+    save_history(history)
+    return overall_success
 
 def print_status():
     config = load_config()
@@ -213,15 +232,17 @@ def print_status():
     print("  MACAWAY PROSPECT PUBLISHER — ÉTAT DU CRON")
     print("=" * 65)
     print(f"Heure actuelle (Alger) : {alger_h:02d}:{alger_m:02d} (créneau actuel: {current_slot})")
-    print(f"Groupe cible           : {config.get('target_group_name')}")
-    print(f"ID du groupe           : {config.get('target_group_id')}")
+    targets = config.get("target_groups") or [{"id": config.get("target_group_id"), "name": config.get("target_group_name")}]
+    print(f"Groupes cibles ({len(targets)}) :")
+    for t in targets:
+        print(f"  - {t.get('name')}: {t.get('id')}")
     print(f"Fréquence              : 1 jour sur {config.get('days_interval', 3)} (alternance matin / après-midi)")
     print(f"Prochain créneau visé  : {expected_slot}")
-    print(f"Total envoyés          : {history.get('sent_count', 0)}")
+    print(f"Total envoyés (sessions): {history.get('sent_count', 0)}")
     
     can_send, reason = check_can_send(config, history, current_slot)
     print("-" * 65)
-    print(f"Statut si exécuté maintenant : {'>> PRÊT À ENVOYER <<' if can_send else 'EN PAUSE / EN ATTENTE'}")
+    print(f"Statut si exécuté automatiquement : {'>> PRÊT À ENVOYER <<' if can_send else 'EN PAUSE / EN ATTENTE'}")
     print(f"Raison : {reason}")
     print("=" * 65)
 
