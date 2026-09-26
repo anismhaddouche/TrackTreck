@@ -53,3 +53,4 @@ backups/
 
 # Prospect publisher runtime state
 prospect/history.json
+prospect/campaigns/*/history.json

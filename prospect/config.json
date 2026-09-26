@@ -16,11 +16,28 @@
       "name": "Agence de tourisme b2b rimy travel"
     }
   ],
-  "days_interval": 3,
-  "slots": [
-    { "name": "morning", "hour": 10, "minute": 20 },
-    { "name": "afternoon", "hour": 16, "minute": 40 }
-  ],
   "jitter_max_minutes": 25,
-  "inter_group_delay_seconds": 15
+  "inter_group_delay_seconds": 15,
+  "campaigns": {
+    "platform_b2b": {
+      "name": "Flyer B2B Plateforme Macaway",
+      "enabled": true,
+      "folder": "campaigns/platform_b2b",
+      "media_file": "flyer.jpg",
+      "media_type": "image",
+      "file_name": "flyer_macaway.jpg",
+      "days_interval": 3,
+      "slots": ["morning", "afternoon"]
+    },
+    "timimoun": {
+      "name": "Offre Séjour Organisé Timimoun",
+      "enabled": true,
+      "folder": "campaigns/timimoun",
+      "media_file": "programme.pdf",
+      "media_type": "document",
+      "file_name": "Macaway_Offre_B2B_Timimoun_5J4N.pdf",
+      "days_interval": 1,
+      "slots": ["morning", "afternoon", "midday", "evening"]
+    }
+  }
 }

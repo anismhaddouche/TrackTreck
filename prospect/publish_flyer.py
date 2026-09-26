@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Script d'envoi automatique du Flyer Macaway vers un groupe WhatsApp B2B.
+Script d'envoi automatique multi-campagnes Macaway vers les groupes WhatsApp B2B.
 
-RÈGLES MÉTIER :
-1. Fréquence : Publie exactement 1 jour sur 3 (délai minimal ~70h entre 2 envois).
-2. Horaires variés : Alterne entre créneau du MATIN (10h-11h Alger) et créneau d'APRÈS-MIDI (16h-17h Alger).
-3. Anti-ban WhatsApp : Ajoute un décalage aléatoire de 5 à 25 minutes (jitter humain) pour ne jamais poster à la même minute.
-4. Historique & logs : Enregistre chaque publication dans history.json et publisher.log.
+Campagnes supportées :
+1. platform_b2b : Recrutement Agences (1 jour sur 3, image flyer.jpg, alternance matin / après-midi)
+2. timimoun     : Offre Séjour Timimoun (Tous les jours, document programme.pdf, rotation sur 4 créneaux)
+
+Options CLI :
+  --status              : Affiche l'état et les prévisions de toutes les campagnes
+  --campaign <id>       : Exécute une campagne spécifique (ex: --campaign timimoun)
+  --test                : Envoie vers le groupe interne Tracktrek pour valider sans polluer les groupes B2B
+  --force               : Force l'envoi immédiat sans respecter le délai ni le jitter
 """
 
 import os
@@ -21,10 +25,15 @@ from datetime import datetime, timezone, timedelta
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(DIR, "config.json")
-CAPTION_FILE = os.path.join(DIR, "caption.txt")
-FLYER_FILE = os.path.join(DIR, "flyer.jpg")
-HISTORY_FILE = os.path.join(DIR, "history.json")
 LOG_FILE = os.path.join(DIR, "publisher.log")
+TEST_GROUP_ID = "120363410913560615@g.us"
+
+SLOT_HOURS = {
+    "morning": (9, 12),      # 09h00 - 11h59 Alger
+    "midday": (12, 15),       # 12h00 - 14h59 Alger
+    "afternoon": (15, 18),    # 15h00 - 17h59 Alger
+    "evening": (18, 22),      # 18h00 - 21h59 Alger
+}
 
 def log(msg):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -42,45 +51,78 @@ def load_config():
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def load_caption():
-    if not os.path.exists(CAPTION_FILE):
-        raise FileNotFoundError(f"Fichier caption manquant: {CAPTION_FILE}")
-    with open(CAPTION_FILE, "r", encoding="utf-8") as f:
-        return f.read().strip()
+def get_current_algeria_time():
+    """L'Algérie est en UTC+1 toute l'année."""
+    utc_now = datetime.now(timezone.utc)
+    return utc_now + timedelta(hours=1)
 
-def load_history():
-    if not os.path.exists(HISTORY_FILE):
+def get_current_slot(alger_dt):
+    hour = alger_dt.hour
+    if 9 <= hour < 12:
+        return "morning"
+    elif 12 <= hour < 15:
+        return "midday"
+    elif 15 <= hour < 18:
+        return "afternoon"
+    elif 18 <= hour < 22:
+        return "evening"
+    return "night"
+
+def get_campaign_paths(campaign_id, campaign_cfg):
+    folder_rel = campaign_cfg.get("folder", f"campaigns/{campaign_id}")
+    folder = os.path.join(DIR, folder_rel)
+    
+    media_file = campaign_cfg.get("media_file")
+    if not media_file:
+        if os.path.exists(os.path.join(folder, "programme.pdf")):
+            media_file = "programme.pdf"
+        elif os.path.exists(os.path.join(folder, "flyer.jpg")):
+            media_file = "flyer.jpg"
+        else:
+            media_file = "flyer.jpg"
+
+    return {
+        "folder": folder,
+        "media": os.path.join(folder, media_file),
+        "caption": os.path.join(folder, "caption.txt"),
+        "history": os.path.join(folder, "history.json")
+    }
+
+def load_history(history_path):
+    if not os.path.exists(history_path):
         return {"sent_count": 0, "last_slot": None, "history": []}
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        with open(history_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {"sent_count": 0, "last_slot": None, "history": []}
 
-def save_history(history_data):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+def save_history(history_path, history_data):
+    with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history_data, f, indent=2, ensure_ascii=False)
 
-def get_current_algeria_hour():
-    """L'Algérie est en UTC+1 toute l'année."""
-    utc_now = datetime.now(timezone.utc)
-    algeria_now = utc_now + timedelta(hours=1)
-    return algeria_now.hour, algeria_now.minute
-
-def determine_target_slot(history):
-    """Alterne entre 'morning' et 'afternoon' pour varier les horaires."""
+def determine_target_slot(campaign_cfg, history):
+    allowed_slots = campaign_cfg.get("slots", ["morning", "afternoon"])
     last_slot = history.get("last_slot")
-    if last_slot == "morning":
-        return "afternoon"
-    return "morning"
+    if not last_slot or last_slot not in allowed_slots:
+        return allowed_slots[0]
+    idx = allowed_slots.index(last_slot)
+    return allowed_slots[(idx + 1) % len(allowed_slots)]
 
-def check_can_send(config, history, current_slot):
-    """Vérifie l'intervalle 1 jour sur 3 et la cohérence du créneau."""
+def check_can_send(campaign_id, campaign_cfg, history, current_slot):
     prod_entries = [e for e in history.get("history", []) if not e.get("is_test")]
-    days_interval = config.get("days_interval", 3)
-    
+    days_interval = campaign_cfg.get("days_interval", 1)
+
+    allowed_slots = campaign_cfg.get("slots", ["morning", "afternoon"])
+    if current_slot not in allowed_slots:
+        return False, f"Hors créneaux autorisés ({current_slot} n'est pas dans {allowed_slots})."
+
+    expected_slot = determine_target_slot(campaign_cfg, history)
+
     if not prod_entries:
-        return True, "Premier envoi : prêt."
+        if current_slot == expected_slot:
+            return True, f"Premier envoi : créneau initial '{current_slot}' prêt."
+        return False, f"Premier envoi : en attente du créneau prévu '{expected_slot}' (actuel: '{current_slot}')."
 
     last_send = prod_entries[-1]
     last_timestamp = last_send.get("timestamp")
@@ -91,63 +133,75 @@ def check_can_send(config, history, current_slot):
     now = datetime.now(timezone.utc)
     delta = now - last_dt
 
-    # Exiger au moins (interval * 24 - 5) heures de repos
-    min_hours = (days_interval * 24) - 5
+    # Délai minimum avant le prochain envoi
+    if days_interval >= 3:
+        min_hours = (days_interval * 24) - 5   # ~67h pour 3 jours
+    elif days_interval == 1:
+        min_hours = 18                         # 18h min pour garantir 1 seul envoi par jour calendrier
+    else:
+        min_hours = (days_interval * 24) - 4
+
     if delta.total_seconds() < min_hours * 3600:
-        days_left = round((min_hours * 3600 - delta.total_seconds()) / 86400, 1)
-        next_dt = last_dt + timedelta(days=days_interval)
-        return False, f"Règle 1 jour sur 3 : dernier envoi le {last_dt.strftime('%d/%m à %H:%M')}. Prochain envoi vers le {next_dt.strftime('%d/%m')} (dans ~{days_left} jour(s))."
+        hours_left = round((min_hours * 3600 - delta.total_seconds()) / 3600, 1)
+        next_dt = last_dt + timedelta(hours=min_hours)
+        return False, f"Délai d'intervalle ({days_interval}j) : dernier envoi le {last_dt.strftime('%d/%m à %H:%M UTC')}. Prochain possible après {next_dt.strftime('%d/%m à %H:%M UTC')} (dans ~{hours_left}h)."
 
-    # Vérification de l'alternance de créneau
-    expected_slot = determine_target_slot(history)
     if current_slot != expected_slot:
-        return False, f"Alternance d'horaire : le créneau attendu pour cet envoi est '{expected_slot}', passage actuel = '{current_slot}'. En attente du créneau prévu."
+        return False, f"Rotation d'horaire : créneau attendu '{expected_slot}', passage actuel = '{current_slot}'. En attente du créneau prévu."
 
-    return True, f"Délai respecté (dernier envoi il y a {delta.days} jours). Créneau '{current_slot}' validé."
+    return True, f"Délai validé ({round(delta.total_seconds()/3600, 1)}h écoulées). Créneau '{current_slot}' prêt."
 
-def send_flyer(force=False, test_group=None):
-    config = load_config()
-    caption = load_caption()
-    history = load_history()
+def send_campaign(campaign_id, campaign_cfg, global_config, force=False, test_group=None):
+    paths = get_campaign_paths(campaign_id, campaign_cfg)
+    campaign_name = campaign_cfg.get("name", campaign_id)
+    history = load_history(paths["history"])
 
-    if not os.path.exists(FLYER_FILE):
-        log(f"ERREUR : Fichier flyer introuvable dans {FLYER_FILE}")
+    if not os.path.exists(paths["media"]):
+        log(f"[{campaign_id}] ERREUR : Fichier média introuvable ({paths['media']})")
         return False
 
-    # Identification du créneau actuel (heure d'Alger)
-    alger_hour, alger_min = get_current_algeria_hour()
-    current_slot = "morning" if alger_hour < 14 else "afternoon"
+    if not os.path.exists(paths["caption"]):
+        log(f"[{campaign_id}] ERREUR : Caption introuvable ({paths['caption']})")
+        return False
+
+    with open(paths["caption"], "r", encoding="utf-8") as f:
+        caption = f.read().strip()
+
+    alger_dt = get_current_algeria_time()
+    current_slot = get_current_slot(alger_dt)
 
     if not force:
-        can_send, reason = check_can_send(config, history, current_slot)
+        can_send, reason = check_can_send(campaign_id, campaign_cfg, history, current_slot)
         if not can_send:
-            log(f"SAUTÉ : {reason}")
+            log(f"[{campaign_id}] SAUTÉ : {reason}")
             return False
-        log(f"CRON DÉCLENCHÉ : {reason}")
+        log(f"[{campaign_id}] DÉCLENCHÉ : {reason}")
 
-        # Anti-ban Jitter : pause aléatoire de 5 à N minutes
-        jitter_max = config.get("jitter_max_minutes", 20)
+        jitter_max = global_config.get("jitter_max_minutes", 20)
         if jitter_max > 0:
             delay_sec = random.randint(180, jitter_max * 60)
-            log(f"ANTI-BAN : Pause aléatoire humaine de {delay_sec // 60}m {delay_sec % 60}s avant l'envoi...")
+            log(f"[{campaign_id}] ANTI-BAN : Pause aléatoire de {delay_sec // 60}m {delay_sec % 60}s...")
             time.sleep(delay_sec)
     else:
-        log("MODE FORCÉ : Envoi immédiat sans attente de délai ni de jitter.")
+        log(f"[{campaign_id}] MODE FORCÉ : Envoi immédiat sans délai.")
 
-    # Encodage de l'image
-    with open(FLYER_FILE, "rb") as f:
-        b64_image = base64.b64encode(f.read()).decode("utf-8")
+    # Détection du type de média
+    is_pdf = paths["media"].lower().endswith(".pdf")
+    media_type = campaign_cfg.get("media_type") or ("document" if is_pdf else "image")
+    mimetype = "application/pdf" if is_pdf else "image/jpeg"
+    file_name = campaign_cfg.get("file_name") or os.path.basename(paths["media"])
+
+    with open(paths["media"], "rb") as f:
+        b64_media = base64.b64encode(f.read()).decode("utf-8")
 
     if test_group:
         targets = [{"id": test_group, "name": "TEST"}]
-    elif "target_groups" in config and config["target_groups"]:
-        targets = config["target_groups"]
     else:
-        targets = [{"id": config.get("target_group_id"), "name": config.get("target_group_name", "B2B")}]
+        targets = global_config.get("target_groups", [])
 
-    api_url = config.get("evolution_api_url", "http://127.0.0.1/api").rstrip("/")
-    instance = config.get("instance_name", "tracktrek")
-    api_key = config.get("api_key")
+    api_url = global_config.get("evolution_api_url", "http://127.0.0.1/api").rstrip("/")
+    instance = global_config.get("instance_name", "tracktrek")
+    api_key = global_config.get("api_key")
     endpoint = f"{api_url}/message/sendMedia/{instance}"
 
     overall_success = True
@@ -158,59 +212,52 @@ def send_flyer(force=False, test_group=None):
         group_label = "TEST" if test_group else target.get("name", "B2B")
 
         if idx > 0:
-            delay_between = config.get("inter_group_delay_seconds", 15)
-            log(f"Pause anti-spam de sécurité ({delay_between}s) avant le groupe suivant...")
-            time.sleep(delay_between)
+            inter_delay = global_config.get("inter_group_delay_seconds", 15)
+            log(f"[{campaign_id}] Pause de sécurité ({inter_delay}s) avant groupe suivant...")
+            time.sleep(inter_delay)
 
         payload = {
             "number": group_id,
-            "mediatype": "image",
-            "mimetype": "image/jpeg",
+            "mediatype": media_type,
+            "mimetype": mimetype,
             "caption": caption,
-            "media": b64_image,
-            "fileName": "flyer_macaway.jpg"
+            "media": b64_media,
+            "fileName": file_name
         }
 
         req = urllib.request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "apikey": api_key,
-                "Content-Type": "application/json"
-            },
+            headers={"apikey": api_key, "Content-Type": "application/json"},
             method="POST"
         )
 
-        log(f"Publication du Flyer dans '{group_label}' ({group_id})...")
-
+        log(f"[{campaign_id}] Publication ({media_type}: {file_name}) dans '{group_label}' ({group_id})...")
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
-                resp_body = resp.read().decode("utf-8")
-                res_json = json.loads(resp_body)
+                res_json = json.loads(resp.read().decode("utf-8"))
                 msg_id = res_json.get("key", {}).get("id") or "envoyé"
-
-                log(f"SUCCÈS : Flyer publié avec succès dans '{group_label}' ! (Message ID: {msg_id})")
+                log(f"[{campaign_id}] SUCCÈS dans '{group_label}' (ID: {msg_id})")
                 any_sent = True
 
-                # Sauvegarde dans l'historique
                 now_iso = datetime.now(timezone.utc).isoformat()
-                is_test = bool(test_group)
                 history["history"].append({
                     "timestamp": now_iso,
                     "slot": current_slot,
                     "group_id": group_id,
                     "group_name": group_label,
                     "message_id": msg_id,
+                    "media_type": media_type,
+                    "file_name": file_name,
                     "forced": force,
-                    "is_test": is_test
+                    "is_test": bool(test_group)
                 })
-
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="ignore")
-            log(f"ERREUR HTTP {e.code} Evolution API pour '{group_label}' : {err}")
+            log(f"[{campaign_id}] ERREUR HTTP {e.code} pour '{group_label}' : {err}")
             overall_success = False
         except Exception as e:
-            log(f"ERREUR d'envoi pour '{group_label}' : {e}")
+            log(f"[{campaign_id}] ERREUR d'envoi pour '{group_label}' : {e}")
             overall_success = False
 
     if any_sent and not bool(test_group):
@@ -218,46 +265,75 @@ def send_flyer(force=False, test_group=None):
         history["last_slot"] = current_slot
 
     history["history"] = history["history"][-100:]
-    save_history(history)
+    save_history(paths["history"], history)
+
+    if campaign_id == "platform_b2b" and not bool(test_group):
+        root_hist_path = os.path.join(DIR, "history.json")
+        save_history(root_hist_path, history)
+
     return overall_success
 
 def print_status():
     config = load_config()
-    history = load_history()
-    alger_h, alger_m = get_current_algeria_hour()
-    current_slot = "morning" if alger_h < 14 else "afternoon"
-    expected_slot = determine_target_slot(history)
+    alger_dt = get_current_algeria_time()
+    current_slot = get_current_slot(alger_dt)
+    campaigns = config.get("campaigns", {})
 
-    print("=" * 65)
-    print("  MACAWAY PROSPECT PUBLISHER — ÉTAT DU CRON")
-    print("=" * 65)
-    print(f"Heure actuelle (Alger) : {alger_h:02d}:{alger_m:02d} (créneau actuel: {current_slot})")
-    targets = config.get("target_groups") or [{"id": config.get("target_group_id"), "name": config.get("target_group_name")}]
-    print(f"Groupes cibles ({len(targets)}) :")
+    print("=" * 70)
+    print("      MACAWAY PROSPECT PUBLISHER — ÉTAT DES CAMPAGNES B2B")
+    print("=" * 70)
+    print(f"Heure actuelle (Alger UTC+1) : {alger_dt.strftime('%Y-%m-%d %H:%M')} (Créneau: '{current_slot}')")
+    targets = config.get("target_groups", [])
+    print(f"Groupes cibles enregistrés ({len(targets)}) :")
     for t in targets:
-        print(f"  - {t.get('name')}: {t.get('id')}")
-    print(f"Fréquence              : 1 jour sur {config.get('days_interval', 3)} (alternance matin / après-midi)")
-    print(f"Prochain créneau visé  : {expected_slot}")
-    print(f"Total envoyés (sessions): {history.get('sent_count', 0)}")
-    
-    can_send, reason = check_can_send(config, history, current_slot)
-    print("-" * 65)
-    print(f"Statut si exécuté automatiquement : {'>> PRÊT À ENVOYER <<' if can_send else 'EN PAUSE / EN ATTENTE'}")
-    print(f"Raison : {reason}")
-    print("=" * 65)
+        print(f"  • {t.get('name')}: {t.get('id')}")
+    print("-" * 70)
+
+    for cid, ccfg in campaigns.items():
+        enabled = ccfg.get("enabled", True)
+        paths = get_campaign_paths(cid, ccfg)
+        hist = load_history(paths["history"])
+        expected_slot = determine_target_slot(ccfg, hist)
+        can_send, reason = check_can_send(cid, ccfg, hist, current_slot)
+
+        media_name = os.path.basename(paths["media"])
+        status_tag = "[ ACTIF - PRÊT ]" if can_send else "[ EN PAUSE / EN ATTENTE ]"
+        if not enabled:
+            status_tag = "[ DÉSACTIVÉ ]"
+
+        print(f"▶ Campagne : {ccfg.get('name', cid)} ({cid}) {status_tag}")
+        print(f"  • Fichier média        : {media_name} ({ccfg.get('media_type', 'auto')})")
+        print(f"  • Fréquence            : 1 envoi tous les {ccfg.get('days_interval')} jour(s)")
+        print(f"  • Créneaux configurés : {ccfg.get('slots')}")
+        print(f"  • Dernier créneau envoyé: {hist.get('last_slot')}")
+        print(f"  • Prochain créneau visé: '{expected_slot}'")
+        print(f"  • Total envoyés        : {hist.get('sent_count', 0)}")
+        print(f"  • Diagnostic           : {reason}")
+        print("-" * 70)
 
 if __name__ == "__main__":
     if "--status" in sys.argv:
         print_status()
         sys.exit(0)
-    
+
+    cfg = load_config()
     force_run = "--force" in sys.argv
-    test_target = None
+    test_target = TEST_GROUP_ID if "--test" in sys.argv else None
 
-    if "--test" in sys.argv:
-        # Envoi de test vers le groupe interne Tracktrek pour vérifier sans polluer le groupe B2B
-        test_target = "120363410913560615@g.us"
-        force_run = True
-        log("Test demandé : envoi vers le groupe interne Tracktrek...")
+    target_campaign = None
+    if "--campaign" in sys.argv:
+        idx = sys.argv.index("--campaign")
+        if idx + 1 < len(sys.argv):
+            target_campaign = sys.argv[idx + 1]
 
-    send_flyer(force=force_run, test_group=test_target)
+    campaigns = cfg.get("campaigns", {})
+
+    if target_campaign:
+        if target_campaign not in campaigns:
+            print(f"Erreur: campagne inconnue '{target_campaign}'. Disponibles: {list(campaigns.keys())}")
+            sys.exit(1)
+        send_campaign(target_campaign, campaigns[target_campaign], cfg, force=force_run, test_group=test_target)
+    else:
+        for cid, ccfg in campaigns.items():
+            if ccfg.get("enabled", True):
+                send_campaign(cid, ccfg, cfg, force=force_run, test_group=test_target)
