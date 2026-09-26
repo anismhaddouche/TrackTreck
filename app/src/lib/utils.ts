@@ -16,13 +16,15 @@ export function slugify(value: string): string {
     .slice(0, 80) || "offer";
 }
 
-export function formatPrice(value: number | null | undefined): string {
+export function formatPrice(
+  value: number | null | undefined,
+  showCurrency = true,
+): string {
   if (value === null || value === undefined) return "—";
-  return (
-    new Intl.NumberFormat("fr-FR", {
-      maximumFractionDigits: 0,
-    }).format(value) + " DA"
-  );
+  const formatted = new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 0,
+  }).format(value);
+  return showCurrency ? `${formatted} DA` : formatted;
 }
 
 export function formatDate(value: string | null | undefined): string {
@@ -35,3 +37,20 @@ export function formatDate(value: string | null | undefined): string {
     day: "numeric",
   });
 }
+
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dateStr = d.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const timeStr = d.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${dateStr} à ${timeStr}`;
+}
+

@@ -5,14 +5,12 @@ import {
   Clock,
   Filter,
   PackageOpen,
-  Plane,
   Search,
 } from "lucide-react";
 
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -42,15 +40,17 @@ import {
 } from "@/components/ui/tooltip";
 import { OfferStatusBadge } from "./OfferStatusBadge";
 
-import { formatDate, formatPrice } from "@/lib/utils";
+import { formatDateTime, formatPrice } from "@/lib/utils";
 import { CircularScore } from "@/components/ui/circular-score";
-import type { TourSummary } from "@/lib/types";
+import type { TourSummary, OfferStatus } from "@/lib/types";
 
 interface OffersReviewListProps {
   offers: TourSummary[];
   isLoading: boolean;
   isError: boolean;
   errorMessage?: string;
+  statusFilter?: OfferStatus | "all";
+  onStatusFilterChange?: (status: OfferStatus | "all") => void;
 }
 
 export function OffersReviewList({
@@ -58,6 +58,8 @@ export function OffersReviewList({
   isLoading,
   isError,
   errorMessage,
+  statusFilter,
+  onStatusFilterChange,
 }: OffersReviewListProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -65,6 +67,13 @@ export function OffersReviewList({
   const [agencyId, setAgencyId] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_desc");
+  const [internalStatus, setInternalStatus] = useState<OfferStatus | "all">("all");
+
+  const effectiveStatus = statusFilter !== undefined ? statusFilter : internalStatus;
+  const setEffectiveStatus = (s: OfferStatus | "all") => {
+    if (onStatusFilterChange) onStatusFilterChange(s);
+    else setInternalStatus(s);
+  };
 
   const countries = useMemo(() => {
     const set = new Set<string>();
@@ -83,7 +92,19 @@ export function OffersReviewList({
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     const result = offers.filter((o) => {
-      if (s && !(o.title ?? "").toLowerCase().includes(s)) return false;
+      if (s) {
+        const titleMatch = (o.title ?? "").toLowerCase().includes(s);
+        const countryMatch = (o.countries ?? []).some((c) =>
+          c.toLowerCase().includes(s),
+        );
+        const airlineMatch = (o.airline ?? "").toLowerCase().includes(s);
+        const agencyMatch = (o.agency?.name ?? "").toLowerCase().includes(s);
+        if (!titleMatch && !countryMatch && !airlineMatch && !agencyMatch) {
+          return false;
+        }
+      }
+      if (effectiveStatus !== "all" && o.status !== effectiveStatus)
+        return false;
       if (country !== "all" && !(o.countries ?? []).includes(country))
         return false;
       if (agencyId !== "all" && String(o.agency_id ?? "") !== agencyId)
@@ -103,89 +124,119 @@ export function OffersReviewList({
       if (sortBy === "price_desc") return (b.lead_price ?? 0) - (a.lead_price ?? 0);
       return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
     });
-  }, [offers, search, country, agencyId, scoreFilter, sortBy]);
+  }, [offers, search, country, agencyId, scoreFilter, sortBy, effectiveStatus]);
 
   const totalShown = filtered.length;
 
   return (
     <Card className="overflow-hidden border-border/70">
       <CardHeader className="space-y-3 border-b bg-muted/30">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Offres en attente
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <CardTitle className="text-base font-semibold tracking-tight text-foreground">
+              Offres
             </CardTitle>
-            <CardDescription>
-              Brouillons extraits par le pipeline — vérifiez, corrigez, puis
-              validez ou supprimez.
-            </CardDescription>
+            <Badge variant="soft" className="gap-1 text-[11px] font-normal">
+              <Filter className="h-3 w-3" />
+              {totalShown} affichée{totalShown > 1 ? "s" : ""}
+            </Badge>
           </div>
-          <Badge variant="soft" className="gap-1.5 text-[11px]">
-            <Filter className="h-3 w-3" />
-            {totalShown} affichées
-          </Badge>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap py-1">
+          <div className="relative w-[180px] sm:w-[220px] shrink-0">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par titre…"
+              placeholder="Rechercher…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
+              className="h-9 pl-8 text-xs"
             />
           </div>
-          <Select value={country} onValueChange={setCountry}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Pays" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les pays</SelectItem>
-              {countries.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={agencyId} onValueChange={setAgencyId}>
-            <SelectTrigger className="w-full sm:w-[170px]">
-              <SelectValue placeholder="Agence" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Toutes les agences</SelectItem>
-              {agencies.map((a) => (
-                <SelectItem key={a.id} value={String(a.id)}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={scoreFilter} onValueChange={setScoreFilter}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Qualité" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous scores</SelectItem>
-              <SelectItem value="excellent">≥ 80% (Complet)</SelectItem>
-              <SelectItem value="good">60 - 79% (Bon)</SelectItem>
-              <SelectItem value="fair">40 - 59% (Moyen)</SelectItem>
-              <SelectItem value="poor">&lt; 40% (Critique)</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-full sm:w-[160px]">
-              <SelectValue placeholder="Trier par" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="created_desc">Plus récentes</SelectItem>
-              <SelectItem value="score_desc">Score décroissant</SelectItem>
-              <SelectItem value="score_asc">Score croissant</SelectItem>
-              <SelectItem value="price_asc">Prix croissant</SelectItem>
-              <SelectItem value="price_desc">Prix décroissant</SelectItem>
-            </SelectContent>
-          </Select>
+
+          <div className="w-[130px] shrink-0">
+            <Select
+              value={effectiveStatus}
+              onValueChange={(val) => setEffectiveStatus(val as OfferStatus | "all")}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <span className="text-muted-foreground mr-1">Statut :</span>
+                <SelectValue placeholder="Tous" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous</SelectItem>
+                <SelectItem value="draft">Brouillons</SelectItem>
+                <SelectItem value="pending_review">En cours</SelectItem>
+                <SelectItem value="published">Validées</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-[125px] shrink-0">
+            <Select value={country} onValueChange={setCountry}>
+              <SelectTrigger className="h-9 text-xs">
+                <span className="text-muted-foreground mr-1">Pays :</span>
+                <SelectValue placeholder="Tous" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous</SelectItem>
+                {countries.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-[135px] shrink-0">
+            <Select value={agencyId} onValueChange={setAgencyId}>
+              <SelectTrigger className="h-9 text-xs">
+                <span className="text-muted-foreground mr-1">Agence :</span>
+                <SelectValue placeholder="Toutes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                {agencies.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-[120px] shrink-0">
+            <Select value={scoreFilter} onValueChange={setScoreFilter}>
+              <SelectTrigger className="h-9 text-xs">
+                <span className="text-muted-foreground mr-1">Score :</span>
+                <SelectValue placeholder="Tous" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous</SelectItem>
+                <SelectItem value="excellent">≥ 80%</SelectItem>
+                <SelectItem value="good">60 - 79%</SelectItem>
+                <SelectItem value="fair">40 - 59%</SelectItem>
+                <SelectItem value="poor">&lt; 40%</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-[130px] shrink-0">
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="h-9 text-xs">
+                <span className="text-muted-foreground mr-1">Tri :</span>
+                <SelectValue placeholder="Récentes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_desc">Récentes</SelectItem>
+                <SelectItem value="score_desc">Score ↓</SelectItem>
+                <SelectItem value="score_asc">Score ↑</SelectItem>
+                <SelectItem value="price_asc">Prix ↑</SelectItem>
+                <SelectItem value="price_desc">Prix ↓</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </CardHeader>
 
@@ -199,15 +250,13 @@ export function OffersReviewList({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[24%]">Offre</TableHead>
-              <TableHead className="w-[70px] text-center">Score</TableHead>
+              <TableHead className="w-[28%]">Offre</TableHead>
               <TableHead>Pays</TableHead>
               <TableHead>Agence</TableHead>
-              <TableHead className="text-right">Nuits</TableHead>
-              <TableHead>Compagnie</TableHead>
-              <TableHead className="text-right">À partir de</TableHead>
+              <TableHead className="text-right">Prix</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Créée le</TableHead>
+              <TableHead className="w-[80px] text-center">Score</TableHead>
               <TableHead className="w-[1%] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -215,7 +264,7 @@ export function OffersReviewList({
             {isLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={`skeleton-${i}`}>
-                  {Array.from({ length: 10 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -224,7 +273,7 @@ export function OffersReviewList({
               ))
             ) : filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={10} className="p-0">
+                <TableCell colSpan={8} className="p-0">
                   <ListEmptyState hasAny={offers.length > 0} />
                 </TableCell>
               </TableRow>
@@ -250,11 +299,6 @@ export function OffersReviewList({
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center py-2">
-                    <div className="flex justify-center" title={`Complétude: ${offer.quality_score ?? 0}%`}>
-                      <CircularScore score={offer.quality_score ?? 0} size="sm" />
-                    </div>
-                  </TableCell>
                   <TableCell>
                     <CountryChips countries={offer.countries ?? []} />
                   </TableCell>
@@ -265,30 +309,22 @@ export function OffersReviewList({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {offer.duration_nights ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {offer.airline ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Plane className="h-3.5 w-3.5 text-muted-foreground" />
-                        {offer.airline}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
-                    {formatPrice(offer.lead_price)}
+                    {formatPrice(offer.lead_price, false)}
                   </TableCell>
                   <TableCell>
                     <OfferStatusBadge status={offer.status} />
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                     <span className="inline-flex items-center gap-1.5">
                       <Clock className="h-3.5 w-3.5" />
-                      {formatDate(offer.created_at)}
+                      {formatDateTime(offer.created_at)}
                     </span>
+                  </TableCell>
+                  <TableCell className="text-center py-2">
+                    <div className="flex justify-center" title={`Complétude: ${offer.quality_score ?? 0}%`}>
+                      <CircularScore score={offer.quality_score ?? 0} size="sm" />
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
